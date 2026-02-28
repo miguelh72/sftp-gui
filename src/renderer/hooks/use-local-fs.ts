@@ -40,12 +40,13 @@ export function useLocalFs() {
 
   const navigateLocal = useCallback(async (path: string) => {
     setLocalLoading(true)
+    setLocalEntries([])
+    setLocalCwd(path)
+    cwdRef.current = path
     setError(null)
     try {
       const entries = await api.localLs(path)
       setLocalEntries(entries)
-      setLocalCwd(path)
-      cwdRef.current = path
     } catch (err) {
       setError(String(err))
     } finally {

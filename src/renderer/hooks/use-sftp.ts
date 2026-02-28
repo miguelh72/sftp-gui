@@ -131,8 +131,19 @@ export function useSftp() {
   }, [refreshRemoteInner])
 
   const navigateRemote = useCallback(async (path: string) => {
-    await refreshRemoteInner(path)
-  }, [refreshRemoteInner])
+    setRemoteLoading(true)
+    setRemoteEntries([])
+    setRemoteCwd(path)
+    cwdRef.current = path
+    try {
+      const entries = await api.remoteLs(path)
+      setRemoteEntries(entries)
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setRemoteLoading(false)
+    }
+  }, [])
 
   return {
     connected,

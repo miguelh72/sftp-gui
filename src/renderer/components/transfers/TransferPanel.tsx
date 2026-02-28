@@ -13,14 +13,14 @@ export function TransferPanel({ transfers, onCancel, onClearCompleted, onClose }
   const activeCount = transfers.filter(t => t.status === 'active' || t.status === 'queued').length
 
   return (
-    <div className="border-t border-border max-h-48 flex flex-col">
+    <div className="border-t border-border flex flex-col">
       <TransferControls
         activeCount={activeCount}
         totalCount={transfers.length}
         onClearCompleted={onClearCompleted}
         onClose={onClose}
       />
-      <div className="flex-1 overflow-y-auto">
+      <div className="overflow-y-auto" style={{ maxHeight: 'calc(5 * 2.25rem)' }}>
         {transfers.length === 0 ? (
           <div className="flex items-center justify-center py-6 text-xs text-muted-foreground">
             No transfers
