@@ -1,6 +1,6 @@
-import { useState, useCallback, useRef, forwardRef, useImperativeHandle, type DragEvent } from 'react'
+import { useState, useCallback, useRef, useEffect, forwardRef, useImperativeHandle, type DragEvent, type MouseEvent } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { RefreshCw, Loader2, FolderUp } from 'lucide-react'
+import { RefreshCw, Loader2, FolderUp, Trash2 } from 'lucide-react'
 import { PathBreadcrumb, type PathBreadcrumbHandle } from './PathBreadcrumb'
 import { ColumnHeader } from './ColumnHeader'
 import { FileRow } from './FileRow'
@@ -23,6 +23,7 @@ interface Props {
   loading: boolean
   onNavigate: (path: string) => void
   onRefresh: () => void
+  onDelete?: (path: string, name: string, isDirectory: boolean) => void
   onDrop?: (data: DropData) => void
   getItemPath: (entry: FileEntry) => string
   getParentPath: (cwd: string) => string
@@ -41,13 +42,28 @@ export const FilePane = forwardRef<FilePaneHandle, Props>(
     loading,
     onNavigate,
     onRefresh,
+    onDelete,
     onDrop,
     getItemPath,
     getParentPath
   }, ref) {
     const [sort, setSort] = useState<SortConfig>({ field: 'name', direction: 'asc' })
+    const [contextMenu, setContextMenu] = useState<{ x: number; y: number; entry: FileEntry } | null>(null)
     const { isDragOver, handleDragStart, handleDragOver, handleDragLeave, handleDrop } = useDragDrop(type)
     const breadcrumbRef = useRef<PathBreadcrumbHandle>(null)
+    const contextMenuRef = useRef<HTMLDivElement>(null)
+
+    // Close context menu on click outside or scroll
+    useEffect(() => {
+      if (!contextMenu) return
+      const close = () => setContextMenu(null)
+      window.addEventListener('click', close)
+      window.addEventListener('scroll', close, true)
+      return () => {
+        window.removeEventListener('click', close)
+        window.removeEventListener('scroll', close, true)
+      }
+    }, [contextMenu])
 
     useImperativeHandle(ref, () => ({
       focusPathInput() {
@@ -68,6 +84,18 @@ export const FilePane = forwardRef<FilePaneHandle, Props>(
       const data = handleDrop(e)
       if (data && onDrop) onDrop(data)
     }, [handleDrop, onDrop])
+
+    const handleContextMenu = useCallback((e: MouseEvent, entry: FileEntry) => {
+      e.preventDefault()
+      setContextMenu({ x: e.clientX, y: e.clientY, entry })
+    }, [])
+
+    const handleDelete = useCallback(() => {
+      if (!contextMenu || !onDelete) return
+      const entry = contextMenu.entry
+      onDelete(getItemPath(entry), entry.name, entry.isDirectory)
+      setContextMenu(null)
+    }, [contextMenu, onDelete, getItemPath])
 
     const parentPath = getParentPath(cwd)
 
@@ -143,6 +171,7 @@ export const FilePane = forwardRef<FilePaneHandle, Props>(
                     name: entry.name,
                     isDirectory: entry.isDirectory
                   })}
+                  onContextMenu={(e) => handleContextMenu(e, entry)}
                   onDoubleClick={() => {
                     if (entry.isDirectory) {
                       onNavigate(getItemPath(entry))
@@ -159,6 +188,23 @@ export const FilePane = forwardRef<FilePaneHandle, Props>(
             </div>
           )}
         </div>
+
+        {/* Context Menu */}
+        {contextMenu && onDelete && (
+          <div
+            ref={contextMenuRef}
+            className="fixed z-50 min-w-[160px] rounded-md border border-border bg-zinc-900 py-1 shadow-lg"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+          >
+            <button
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-red-400 hover:bg-accent transition-colors"
+              onClick={handleDelete}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete {contextMenu.entry.isDirectory ? 'folder' : 'file'}
+            </button>
+          </div>
+        )}
       </div>
     )
   }

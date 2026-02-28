@@ -1,4 +1,4 @@
-import { readdir, stat } from 'fs/promises'
+import { readdir, stat, rm, unlink } from 'fs/promises'
 import { join } from 'path'
 import { execSync } from 'child_process'
 
@@ -31,6 +31,15 @@ export async function listLocalDirectory(dirPath: string): Promise<LocalFileEntr
   }
 
   return results
+}
+
+export async function deleteLocalEntry(filePath: string): Promise<void> {
+  const stats = await stat(filePath)
+  if (stats.isDirectory()) {
+    await rm(filePath, { recursive: true })
+  } else {
+    await unlink(filePath)
+  }
 }
 
 export function listDrives(): string[] {

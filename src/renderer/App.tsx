@@ -1,4 +1,5 @@
-import { useEffect } from 'react'
+import { useEffect, useCallback } from 'react'
+import { api } from './lib/api'
 import { ConnectionScreen } from './components/connection/ConnectionScreen'
 import { FileBrowser } from './components/browser/FileBrowser'
 import { ToastContainer } from './components/ui/ToastContainer'
@@ -27,6 +28,30 @@ export default function App() {
       local.setError(null)
     }
   }, [local.error])
+
+  const handleDeleteLocal = useCallback(async (path: string, name: string) => {
+    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return
+    try {
+      await api.localDelete(path)
+      local.refreshLocal()
+    } catch (err) {
+      addToast(String(err), 'error')
+    }
+  }, [local.refreshLocal, addToast])
+
+  const handleDeleteRemote = useCallback(async (path: string, name: string, isDirectory: boolean) => {
+    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return
+    try {
+      if (isDirectory) {
+        await api.remoteRmdir(path)
+      } else {
+        await api.remoteRm(path)
+      }
+      sftp.refreshRemote()
+    } catch (err) {
+      addToast(String(err), 'error')
+    }
+  }, [sftp.refreshRemote, addToast])
 
   if (!sftp.connected && !sftp.disconnectedUnexpectedly) {
     return (
@@ -61,6 +86,8 @@ export default function App() {
         onNavigateRemote={sftp.navigateRemote}
         onRefreshRemote={() => sftp.refreshRemote()}
         onDisconnect={sftp.disconnect}
+        onDeleteLocal={handleDeleteLocal}
+        onDeleteRemote={handleDeleteRemote}
         transfers={xfer.transfers}
         onDownload={xfer.download}
         onUpload={xfer.upload}

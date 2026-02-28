@@ -40,6 +40,8 @@ interface Props {
   onRefreshRemote: () => void
   onDisconnect: () => void
   transfers: TransferProgress[]
+  onDeleteLocal: (path: string, name: string, isDirectory: boolean) => void
+  onDeleteRemote: (path: string, name: string, isDirectory: boolean) => void
   onDownload: (remotePath: string, localPath: string, filename: string) => void
   onUpload: (localPath: string, remotePath: string, filename: string) => void
   onCancelTransfer: (id: string) => void
@@ -58,6 +60,7 @@ export function FileBrowser({
   remoteCwd, remoteEntries, remoteLoading,
   onNavigateRemote, onRefreshRemote,
   onDisconnect,
+  onDeleteLocal, onDeleteRemote,
   transfers, onDownload, onUpload, onCancelTransfer, onClearCompleted, activeTransferCount,
   disconnectedUnexpectedly, lastHost, reconnecting, onReconnect, onDismissReconnect
 }: Props) {
@@ -188,6 +191,7 @@ export function FileBrowser({
             loading={localLoading}
             onNavigate={onNavigateLocal}
             onRefresh={onRefreshLocal}
+            onDelete={onDeleteLocal}
             onDrop={handleLocalDrop}
             getItemPath={(entry) => (entry as LocalFileEntry).path || winJoin(localCwd, entry.name)}
             getParentPath={(cwd) => {
@@ -219,6 +223,7 @@ export function FileBrowser({
             loading={remoteLoading}
             onNavigate={onNavigateRemote}
             onRefresh={onRefreshRemote}
+            onDelete={onDeleteRemote}
             onDrop={handleRemoteDrop}
             getItemPath={(entry) => {
               return remoteCwd.endsWith('/')

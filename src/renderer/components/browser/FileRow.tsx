@@ -1,6 +1,6 @@
 import { Folder, File, FileText, FileCode, FileImage, FileArchive, Film } from 'lucide-react'
 import { formatFileSize, formatDate } from '../../lib/format'
-import type { DragEvent } from 'react'
+import type { DragEvent, MouseEvent } from 'react'
 
 interface Props {
   name: string
@@ -8,6 +8,7 @@ interface Props {
   size: number
   modified: string
   onDoubleClick: () => void
+  onContextMenu?: (e: MouseEvent) => void
   onDragStart?: (e: DragEvent) => void
   draggable?: boolean
 }
@@ -47,11 +48,12 @@ function getFileIcon(name: string, isDirectory: boolean) {
   return iconMap[ext] || <File className="h-4 w-4 text-zinc-500" />
 }
 
-export function FileRow({ name, isDirectory, size, modified, onDoubleClick, onDragStart, draggable }: Props) {
+export function FileRow({ name, isDirectory, size, modified, onDoubleClick, onContextMenu, onDragStart, draggable }: Props) {
   return (
     <div
       className="grid grid-cols-[1fr_80px_140px] gap-2 px-3 py-1.5 text-sm hover:bg-accent cursor-default select-none transition-colors"
       onDoubleClick={onDoubleClick}
+      onContextMenu={onContextMenu}
       draggable={draggable}
       onDragStart={onDragStart}
     >

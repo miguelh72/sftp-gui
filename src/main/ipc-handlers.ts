@@ -4,7 +4,7 @@ import { SftpSession } from './sftp/session'
 import { getAllHosts } from './sftp/ssh-config-reader'
 import { findSftpBinary, getSftpVersion } from './sftp/binary-finder'
 import { loadConfig, setRememberedUser, getRememberedUser } from './config-store'
-import { listLocalDirectory, listDrives } from './local-fs'
+import { listLocalDirectory, listDrives, deleteLocalEntry } from './local-fs'
 import { TransferManager } from './transfers/transfer-manager'
 import type { ConnectionConfig, TransferProgress } from './sftp/types'
 
@@ -159,6 +159,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('local-home', () => {
     return homedir()
+  })
+
+  ipcMain.handle('local-delete', async (_e, path: unknown) => {
+    await deleteLocalEntry(validatePath(path, 'local path'))
   })
 
   // --- Transfers ---
