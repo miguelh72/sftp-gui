@@ -1,0 +1,20 @@
+appId: com.sftp-gui.app
+productName: SFTP GUI
+electronDist: node_modules/electron/dist
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/**/*
+  - "!node_modules/**/*"
+  - node_modules/node-pty/**/*
+asarUnpack:
+  - "out/main/**/*"
+  - node_modules/node-pty/**/*
+win:
+  signAndEditExecutable: false
+  target:
+    - target: dir
+      arch:
+        - x64
+  executableName: sftp-gui
