@@ -285,7 +285,19 @@ export class SftpSession extends EventEmitter {
   }
 
   async rmdir(remotePath: string): Promise<void> {
-    await this.execute(`rm -r ${this.escapePath(remotePath)}`)
+    // sftp has no recursive delete — manually recurse
+    const entries = await this.listDirectory(remotePath)
+    for (const entry of entries) {
+      const childPath = remotePath.endsWith('/')
+        ? remotePath + entry.name
+        : remotePath + '/' + entry.name
+      if (entry.isDirectory) {
+        await this.rmdir(childPath)
+      } else {
+        await this.rm(childPath)
+      }
+    }
+    await this.execute(`rmdir ${this.escapePath(remotePath)}`)
   }
 
   async rename(oldPath: string, newPath: string): Promise<void> {
