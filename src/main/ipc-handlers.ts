@@ -1,4 +1,5 @@
 import { ipcMain, BrowserWindow } from 'electron'
+import { homedir } from 'os'
 import { SftpSession } from './sftp/session'
 import { getAllHosts } from './sftp/ssh-config-reader'
 import { findSftpBinary, getSftpVersion } from './sftp/binary-finder'
@@ -154,6 +155,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('local-drives', () => {
     return listDrives()
+  })
+
+  ipcMain.handle('local-home', () => {
+    return homedir()
   })
 
   // --- Transfers ---

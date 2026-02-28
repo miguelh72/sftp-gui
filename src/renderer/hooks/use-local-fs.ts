@@ -12,10 +12,9 @@ export function useLocalFs() {
   const pollingRef = useRef(false)
 
   useEffect(() => {
-    api.localDrives().then((d) => {
+    Promise.all([api.localDrives(), api.localHome()]).then(([d, home]) => {
       setDrives(d)
-      const initial = d.includes('C:\\') ? 'C:\\' : d[0] || 'C:\\'
-      navigateLocal(initial)
+      navigateLocal(home)
     })
   }, [])
 

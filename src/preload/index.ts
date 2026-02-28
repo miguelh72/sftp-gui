@@ -27,6 +27,7 @@ const api = {
   // Local FS
   localLs: (path: string): Promise<LocalFileEntry[]> => ipcRenderer.invoke('local-ls', path),
   localDrives: (): Promise<string[]> => ipcRenderer.invoke('local-drives'),
+  localHome: (): Promise<string> => ipcRenderer.invoke('local-home'),
 
   // Transfers
   transferDownload: (remotePath: string, localPath: string, filename: string): Promise<string> =>
