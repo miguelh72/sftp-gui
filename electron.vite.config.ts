@@ -5,7 +5,7 @@ import { resolve } from 'path'
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({ exclude: ['strip-ansi', 'uuid', 'ssh-config'] })],
+    plugins: [externalizeDepsPlugin({ exclude: ['strip-ansi', 'uuid', 'ssh-config', 'zod'] })],
     build: {
       rollupOptions: {
         input: {
