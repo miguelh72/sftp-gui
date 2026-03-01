@@ -20,6 +20,9 @@ export class TransferItem implements TransferProgress {
   private completedBytes = 0
   private currentFileName = ''
   private currentFileCompleted = false
+  /** Moving window of byte samples for ETA calculation (capped to 30s) */
+  private speedSamples: Array<{ time: number; bytes: number }> = []
+  private readonly SPEED_WINDOW_MS = 30_000
 
   constructor(opts: {
     id: string
@@ -43,7 +46,6 @@ export class TransferItem implements TransferProgress {
 
   updateProgress(data: Partial<TransferProgress>): void {
     if (data.speed !== undefined) this.speed = data.speed
-    if (data.eta !== undefined) this.eta = data.eta
 
     if (this.isFolder && this.total > 0) {
       const progressFilename = data.filename || ''
@@ -74,6 +76,54 @@ export class TransferItem implements TransferProgress {
       if (data.percent !== undefined) this.percent = data.percent
       if (data.transferred !== undefined) this.transferred = data.transferred
     }
+
+    this.computeEta()
+  }
+
+  private computeEta(): void {
+    if (this.total <= 0) return
+
+    const now = Date.now()
+    const effectiveBytes = this.isFolder
+      ? this.completedBytes
+      : Math.round((this.percent / 100) * this.total)
+
+    this.speedSamples.push({ time: now, bytes: effectiveBytes })
+
+    // Prune samples older than the window
+    const cutoff = now - this.SPEED_WINDOW_MS
+    let pruneIdx = 0
+    while (pruneIdx < this.speedSamples.length && this.speedSamples[pruneIdx].time < cutoff) {
+      pruneIdx++
+    }
+    // Keep one sample before the cutoff as the window start reference
+    if (pruneIdx > 1) {
+      this.speedSamples.splice(0, pruneIdx - 1)
+    }
+
+    if (this.speedSamples.length < 2) return
+
+    const oldest = this.speedSamples[0]
+    const newest = this.speedSamples[this.speedSamples.length - 1]
+    const elapsed = (newest.time - oldest.time) / 1000
+    if (elapsed < 0.5) return
+
+    const bytesPerSec = (newest.bytes - oldest.bytes) / elapsed
+    if (bytesPerSec <= 0) return
+
+    const remaining = this.total - effectiveBytes
+    const seconds = Math.ceil(remaining / bytesPerSec)
+    this.eta = TransferItem.formatEta(seconds)
+  }
+
+  private static formatEta(seconds: number): string {
+    if (seconds < 60) return `${seconds}s`
+    const m = Math.floor(seconds / 60)
+    const s = seconds % 60
+    if (m < 60) return s > 0 ? `${m}m ${s}s` : `${m}m`
+    const h = Math.floor(m / 60)
+    const rm = m % 60
+    return rm > 0 ? `${h}h ${rm}m` : `${h}h`
   }
 
   private markCurrentFileCompleted(): void {

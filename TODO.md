@@ -7,3 +7,4 @@
     - Make sure this supports the cancelation configuration in settings
 - Add ESLint and Prettier rules for the project
 - Change build to generate a single .exe file on Windows
+- Add right-click context menu rename option

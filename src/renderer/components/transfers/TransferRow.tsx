@@ -26,28 +26,35 @@ export function TransferRow({ transfer, onCancel }: Props) {
         )}
       </div>
 
-      {/* Progress bar */}
+      {/* Progress bar + percent */}
       {isActive && (
-        <div className="w-24 h-1.5 bg-zinc-800 rounded-full overflow-hidden shrink-0">
-          <div
-            className="h-full bg-primary rounded-full transition-all duration-300"
-            style={{ width: `${transfer.percent}%` }}
-          />
+        <div className="flex items-center gap-1.5 shrink-0">
+          <div className="w-24 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-primary rounded-full transition-all duration-300"
+              style={{ width: `${transfer.percent}%` }}
+            />
+          </div>
+          <span className="text-xs text-muted-foreground w-8 text-right tabular-nums">{transfer.percent}%</span>
         </div>
       )}
 
-      {/* Status info */}
-      <span className="text-xs text-muted-foreground shrink-0 w-16 text-right tabular-nums">
-        {transfer.status === 'active' && `${transfer.percent}%`}
-        {transfer.status === 'queued' && 'Queued'}
-        {transfer.status === 'completed' && <Check className="h-3.5 w-3.5 text-green-400 inline" />}
-        {transfer.status === 'failed' && <AlertCircle className="h-3.5 w-3.5 text-red-400 inline" />}
-        {transfer.status === 'cancelled' && 'Cancelled'}
-      </span>
+      {/* Status (non-active) */}
+      {!isActive && (
+        <span className="text-xs text-muted-foreground shrink-0 text-right">
+          {transfer.status === 'queued' && 'Queued'}
+          {transfer.status === 'completed' && <Check className="h-3.5 w-3.5 text-green-400 inline" />}
+          {transfer.status === 'failed' && <AlertCircle className="h-3.5 w-3.5 text-red-400 inline" />}
+          {transfer.status === 'cancelled' && 'Cancelled'}
+        </span>
+      )}
 
-      {/* Speed */}
+      {/* Speed + ETA */}
       {transfer.status === 'active' && transfer.speed && (
-        <span className="text-xs text-muted-foreground shrink-0 w-20 text-right">{transfer.speed}</span>
+        <span className="text-xs text-muted-foreground shrink-0 text-right tabular-nums">
+          {transfer.speed}
+          {transfer.eta && ` · ${transfer.eta} left`}
+        </span>
       )}
 
       {/* Cancel */}
