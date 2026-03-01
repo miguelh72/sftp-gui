@@ -83,6 +83,12 @@ export default function App() {
   // --- Transfer handlers (overwrite check) ---
 
   const handleDownload = useCallback(async (remotePath: string, localPath: string, filename: string) => {
+    // Skip conflict check when a transfer is already active — the sftp command queue
+    // is busy, so the check would block until the current transfer finishes
+    if (xfer.activeCount > 0) {
+      xfer.download(remotePath, localPath, filename)
+      return
+    }
     try {
       const conflicts = await api.checkTransferConflicts('download', remotePath, localPath, filename)
       if (conflicts.length > 0) {
@@ -93,9 +99,13 @@ export default function App() {
     } catch {
       xfer.download(remotePath, localPath, filename)
     }
-  }, [xfer.download])
+  }, [xfer.download, xfer.activeCount])
 
   const handleUpload = useCallback(async (localPath: string, remotePath: string, filename: string) => {
+    if (xfer.activeCount > 0) {
+      xfer.upload(localPath, remotePath, filename)
+      return
+    }
     try {
       const conflicts = await api.checkTransferConflicts('upload', localPath, remotePath, filename)
       if (conflicts.length > 0) {
@@ -106,7 +116,7 @@ export default function App() {
     } catch {
       xfer.upload(localPath, remotePath, filename)
     }
-  }, [xfer.upload])
+  }, [xfer.upload, xfer.activeCount])
 
   const confirmTransfer = useCallback(() => {
     if (!pendingTransfer) return

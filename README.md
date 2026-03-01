@@ -1,6 +1,18 @@
 # SFTP GUI
 
-Lightweight dual-pane file manager for SFTP, built with Electron and React. Wraps the system's `sftp.exe` binary directly, so it inherits OpenSSH's post-quantum key exchange, keys, and config automatically — no bundled SSH library.
+Lightweight dual-pane file manager for SFTP, built with Electron and React.
+
+## Why?
+
+Most graphical SFTP clients — [WinSCP](https://winscp.net/), [FileZilla](https://filezilla-project.org/), [Cyberduck](https://cyberduck.io/), [MobaXterm](https://mobaxterm.mobatek.net/) — bundle their own SSH implementation. This means:
+
+- **You can't enforce your own SSH security policies.** If you configure `~/.ssh/config` to require post-quantum key exchange algorithms (e.g., `mlkem768x25519-sha256`), a bundled SSH library won't respect that. Your GUI client silently falls back to weaker defaults.
+- **You inherit their supply chain.** A bundled libssh, libssh2, or PuTTY backend is another dependency you don't control. If a vulnerability is found, you wait for the GUI vendor to patch and release — instead of just updating OpenSSH on your system.
+- **Your SSH config is ignored.** Host aliases, identity files, proxy jumps, and other `~/.ssh/config` directives often don't carry over to bundled implementations, forcing you to duplicate configuration.
+
+SFTP GUI takes a different approach: it wraps your system's `sftp` binary directly via a pseudo-terminal. Your OpenSSH installation handles all cryptography, key exchange, and authentication. The GUI is just a file browser on top.
+
+This means you get OpenSSH 10.0's post-quantum KEX, your `~/.ssh/config` settings, your ssh-agent keys, and your `known_hosts` trust — all automatically, with no extra supply chain dependencies.
 
 ## Features
 
@@ -55,3 +67,9 @@ pnpm typecheck   # Type-check without emitting
 | Backspace | Navigate up one directory |
 | Ctrl+L | Focus path bar as editable input |
 | Tab | Switch active pane |
+
+## Contributing
+
+This was built as a personal tool to solve a specific need. If you run into any problems or have improvements, feel free to submit a PR and I'll try to review it quickly.
+
+Note: I've only tested on Windows 10 and 11 so far, so there are no guarantees on other operating systems.

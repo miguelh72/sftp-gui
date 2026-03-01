@@ -10,9 +10,13 @@
     "package": "electron-builder --config electron-builder.yml && powershell -Command \"Compress-Archive -Force -Path dist\\win-unpacked\\* -DestinationPath dist\\sftp-gui-portable.zip\"",
     "typecheck": "tsc --noEmit"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": ["sftp", "ssh", "file-transfer", "electron", "openssh", "post-quantum"],
+  "author": "Miguel Hernandez",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/miguelh72/sftp-gui.git"
+  },
   "pnpm": {
     "onlyBuiltDependencies": [
       "electron",
