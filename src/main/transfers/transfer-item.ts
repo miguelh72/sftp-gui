@@ -24,6 +24,11 @@ export class TransferItem implements TransferProgress {
   /** Moving window of byte samples for ETA calculation (capped to 30s) */
   private speedSamples: Array<{ time: number; bytes: number }> = []
   private readonly SPEED_WINDOW_MS = 30_000
+  /** Rolling speed display: sample every 500ms, keep max 10 (5s window) */
+  private displaySpeedSamples: Array<{ time: number; speed: number }> = []
+  private lastSpeedSampleTime = 0
+  private readonly SPEED_SAMPLE_INTERVAL_MS = 500
+  private readonly MAX_SPEED_SAMPLES = 10
 
   constructor(opts: {
     id: string
@@ -46,7 +51,7 @@ export class TransferItem implements TransferProgress {
   }
 
   updateProgress(data: Partial<TransferProgress>): void {
-    if (data.speed !== undefined) this.speed = data.speed
+    if (data.speed !== undefined) this.updateDisplaySpeed(data.speed)
 
     if (this.isFolder && this.total > 0) {
       const progressFilename = data.filename || ''
@@ -135,6 +140,46 @@ export class TransferItem implements TransferProgress {
       this.fileSizes.splice(idx, 1)
     }
     this.currentFileCompleted = true
+  }
+
+  /** Parse sftp speed string like "3.2MB/s" to bytes/s */
+  private static parseSpeed(s: string): number {
+    const m = s.match(/^([\d.]+)\s*(KB|MB|GB|B)\/s$/i)
+    if (!m) return 0
+    const val = parseFloat(m[1])
+    const unit = m[2].toUpperCase()
+    if (unit === 'GB') return val * 1e9
+    if (unit === 'MB') return val * 1e6
+    if (unit === 'KB') return val * 1e3
+    return val
+  }
+
+  /** Format bytes/s to human-readable speed string */
+  private static formatSpeed(bytesPerSec: number): string {
+    if (bytesPerSec >= 1e9) return `${(bytesPerSec / 1e9).toFixed(1)}GB/s`
+    if (bytesPerSec >= 1e6) return `${(bytesPerSec / 1e6).toFixed(1)}MB/s`
+    if (bytesPerSec >= 1e3) return `${(bytesPerSec / 1e3).toFixed(1)}KB/s`
+    return `${Math.round(bytesPerSec)}B/s`
+  }
+
+  private updateDisplaySpeed(rawSpeed: string): void {
+    const now = Date.now()
+    if (now - this.lastSpeedSampleTime < this.SPEED_SAMPLE_INTERVAL_MS) return
+
+    const parsed = TransferItem.parseSpeed(rawSpeed)
+    if (parsed <= 0) return
+
+    this.lastSpeedSampleTime = now
+    this.displaySpeedSamples.push({ time: now, speed: parsed })
+    if (this.displaySpeedSamples.length > this.MAX_SPEED_SAMPLES) {
+      this.displaySpeedSamples.shift()
+    }
+
+    let sum = 0
+    for (let i = 0; i < this.displaySpeedSamples.length; i++) {
+      sum += this.displaySpeedSamples[i].speed
+    }
+    this.speed = TransferItem.formatSpeed(sum / this.displaySpeedSamples.length)
   }
 
   toJSON(): TransferProgress {
