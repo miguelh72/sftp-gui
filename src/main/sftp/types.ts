@@ -8,11 +8,7 @@ export interface RemoteFileEntry {
   group: string
 }
 
-export interface ConnectionConfig {
-  host: string
-  port: number
-  username: string
-}
+export type { ConnectionConfig } from '../schemas'
 
 export interface HostInfo {
   name: string

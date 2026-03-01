@@ -9,5 +9,12 @@
     "jsx": "react-jsx",
     "lib": ["ESNext", "DOM", "DOM.Iterable"]
   },
-  "include": ["src/renderer/**/*.ts", "src/renderer/**/*.tsx"]
+  "include": [
+    "src/renderer/**/*.ts",
+    "src/renderer/**/*.tsx",
+    "src/preload/index.ts",
+    "src/main/sftp/types.ts",
+    "src/main/schemas.ts",
+    "src/main/local-fs.ts"
+  ]
 }

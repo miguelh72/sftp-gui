@@ -10,10 +10,14 @@ import { useLocalFs } from './hooks/use-local-fs'
 import { useTransfers } from './hooks/use-transfers'
 import { useToasts } from './hooks/use-toasts'
 
-interface PendingDelete {
+interface DeleteItem {
   path: string
   name: string
   isDirectory: boolean
+}
+
+interface PendingDelete {
+  items: DeleteItem[]
   side: 'local' | 'remote'
 }
 
@@ -25,6 +29,29 @@ interface PendingTransfer {
   conflicts: string[]
 }
 
+interface MultiTransferItem {
+  sourcePath: string
+  destDir: string
+  filename: string
+  isDirectory: boolean
+}
+
+interface PendingMultiTransfer {
+  direction: 'upload' | 'download'
+  items: MultiTransferItem[]
+  conflicts: Array<{ filename: string; conflicts: string[] }>
+}
+
+function isDuplicateTransfer(
+  sourcePath: string,
+  direction: 'upload' | 'download',
+  transfers: Array<{ sourcePath?: string; direction: string; status: string }>
+): boolean {
+  return transfers.some(
+    t => t.sourcePath === sourcePath && t.direction === direction && (t.status === 'active' || t.status === 'queued')
+  )
+}
+
 export default function App() {
   const sftp = useSftp()
   const local = useLocalFs()
@@ -33,6 +60,7 @@ export default function App() {
 
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
   const [pendingTransfer, setPendingTransfer] = useState<PendingTransfer | null>(null)
+  const [pendingMultiTransfer, setPendingMultiTransfer] = useState<PendingMultiTransfer | null>(null)
 
   // Route errors to toasts
   useEffect(() => {
@@ -51,40 +79,48 @@ export default function App() {
 
   // --- Delete handlers (styled modal instead of native confirm) ---
 
-  const handleDeleteLocal = useCallback((_path: string, name: string, isDirectory: boolean) => {
-    setPendingDelete({ path: _path, name, isDirectory, side: 'local' })
+  const handleDeleteLocal = useCallback((items: DeleteItem[]) => {
+    setPendingDelete({ items, side: 'local' })
   }, [])
 
-  const handleDeleteRemote = useCallback((path: string, name: string, isDirectory: boolean) => {
-    setPendingDelete({ path, name, isDirectory, side: 'remote' })
+  const handleDeleteRemote = useCallback((items: DeleteItem[]) => {
+    setPendingDelete({ items, side: 'remote' })
   }, [])
 
   const confirmDelete = useCallback(async () => {
     if (!pendingDelete) return
-    const { path, name, isDirectory, side } = pendingDelete
+    const { items, side } = pendingDelete
     setPendingDelete(null)
-    try {
-      if (side === 'local') {
-        await api.localDelete(path)
-        local.refreshLocal()
-      } else {
-        if (isDirectory) {
-          await api.remoteRmdir(path)
+    const errors: string[] = []
+    for (const item of items) {
+      try {
+        if (side === 'local') {
+          await api.localDelete(item.path)
         } else {
-          await api.remoteRm(path)
+          if (item.isDirectory) {
+            await api.remoteRmdir(item.path)
+          } else {
+            await api.remoteRm(item.path)
+          }
         }
-        sftp.refreshRemote()
+      } catch (err) {
+        errors.push(`${item.name}: ${err}`)
       }
-    } catch (err) {
-      addToast(String(err), 'error')
+    }
+    if (side === 'local') local.refreshLocal()
+    else sftp.refreshRemote()
+    if (errors.length > 0) {
+      addToast(errors.join('\n'), 'error')
     }
   }, [pendingDelete, local.refreshLocal, sftp.refreshRemote, addToast])
 
-  // --- Transfer handlers (overwrite check) ---
+  // --- Single Transfer handlers (overwrite check) ---
 
   const handleDownload = useCallback(async (remotePath: string, localPath: string, filename: string) => {
-    // Skip conflict check when a transfer is already active — the sftp command queue
-    // is busy, so the check would block until the current transfer finishes
+    if (isDuplicateTransfer(remotePath, 'download', xfer.transfers)) {
+      addToast('1 file already transferring, skipped', 'info')
+      return
+    }
     if (xfer.activeCount > 0) {
       xfer.download(remotePath, localPath, filename)
       return
@@ -99,9 +135,13 @@ export default function App() {
     } catch {
       xfer.download(remotePath, localPath, filename)
     }
-  }, [xfer.download, xfer.activeCount])
+  }, [xfer.download, xfer.activeCount, xfer.transfers, addToast])
 
   const handleUpload = useCallback(async (localPath: string, remotePath: string, filename: string) => {
+    if (isDuplicateTransfer(localPath, 'upload', xfer.transfers)) {
+      addToast('1 file already transferring, skipped', 'info')
+      return
+    }
     if (xfer.activeCount > 0) {
       xfer.upload(localPath, remotePath, filename)
       return
@@ -116,7 +156,7 @@ export default function App() {
     } catch {
       xfer.upload(localPath, remotePath, filename)
     }
-  }, [xfer.upload, xfer.activeCount])
+  }, [xfer.upload, xfer.activeCount, xfer.transfers, addToast])
 
   const confirmTransfer = useCallback(() => {
     if (!pendingTransfer) return
@@ -142,6 +182,136 @@ export default function App() {
       xfer.upload(sourcePath, destDir, filename, conflicts)
     }
   }, [pendingTransfer, xfer.download, xfer.upload])
+
+  // --- Multi Transfer handlers ---
+
+  const handleDownloadMulti = useCallback(async (items: MultiTransferItem[]) => {
+    // Dedup: filter out items already transferring
+    const toEnqueue: MultiTransferItem[] = []
+    let skippedCount = 0
+    for (const item of items) {
+      if (isDuplicateTransfer(item.sourcePath, 'download', xfer.transfers)) {
+        skippedCount++
+      } else {
+        toEnqueue.push(item)
+      }
+    }
+    if (skippedCount > 0) {
+      addToast(`${skippedCount} file${skippedCount > 1 ? 's' : ''} already transferring, skipped`, 'info')
+    }
+    if (toEnqueue.length === 0) return
+
+    // Batch conflict check
+    try {
+      const results = await api.checkTransferConflictsBatch(
+        'download',
+        toEnqueue.map(i => ({ sourcePath: i.sourcePath, destDir: i.destDir, filename: i.filename }))
+      )
+      const allConflicts = results.filter(r => r.conflicts.length > 0)
+      if (allConflicts.length > 0) {
+        setPendingMultiTransfer({ direction: 'download', items: toEnqueue, conflicts: allConflicts })
+      } else {
+        for (const item of toEnqueue) {
+          xfer.download(item.sourcePath, item.destDir, item.filename)
+        }
+      }
+    } catch {
+      // Conflict check failed — enqueue anyway
+      for (const item of toEnqueue) {
+        xfer.download(item.sourcePath, item.destDir, item.filename)
+      }
+    }
+  }, [xfer.transfers, xfer.download, addToast])
+
+  const handleUploadMulti = useCallback(async (items: MultiTransferItem[]) => {
+    const toEnqueue: MultiTransferItem[] = []
+    let skippedCount = 0
+    for (const item of items) {
+      if (isDuplicateTransfer(item.sourcePath, 'upload', xfer.transfers)) {
+        skippedCount++
+      } else {
+        toEnqueue.push(item)
+      }
+    }
+    if (skippedCount > 0) {
+      addToast(`${skippedCount} file${skippedCount > 1 ? 's' : ''} already transferring, skipped`, 'info')
+    }
+    if (toEnqueue.length === 0) return
+
+    try {
+      const results = await api.checkTransferConflictsBatch(
+        'upload',
+        toEnqueue.map(i => ({ sourcePath: i.sourcePath, destDir: i.destDir, filename: i.filename }))
+      )
+      const allConflicts = results.filter(r => r.conflicts.length > 0)
+      if (allConflicts.length > 0) {
+        setPendingMultiTransfer({ direction: 'upload', items: toEnqueue, conflicts: allConflicts })
+      } else {
+        for (const item of toEnqueue) {
+          xfer.upload(item.sourcePath, item.destDir, item.filename)
+        }
+      }
+    } catch {
+      for (const item of toEnqueue) {
+        xfer.upload(item.sourcePath, item.destDir, item.filename)
+      }
+    }
+  }, [xfer.transfers, xfer.upload, addToast])
+
+  const confirmMultiTransfer = useCallback(() => {
+    if (!pendingMultiTransfer) return
+    const { direction, items } = pendingMultiTransfer
+    setPendingMultiTransfer(null)
+    for (const item of items) {
+      if (direction === 'download') {
+        xfer.download(item.sourcePath, item.destDir, item.filename)
+      } else {
+        xfer.upload(item.sourcePath, item.destDir, item.filename)
+      }
+    }
+  }, [pendingMultiTransfer, xfer.download, xfer.upload])
+
+  const skipMultiTransfer = useCallback(() => {
+    if (!pendingMultiTransfer) return
+    const { direction, items, conflicts } = pendingMultiTransfer
+    setPendingMultiTransfer(null)
+
+    // Build a set of filenames that are fully conflicting (single-file conflicts)
+    const conflictMap = new Map(conflicts.map(c => [c.filename, c.conflicts]))
+
+    for (const item of items) {
+      const itemConflicts = conflictMap.get(item.filename)
+      if (!itemConflicts || itemConflicts.length === 0) {
+        // No conflicts — enqueue normally
+        if (direction === 'download') {
+          xfer.download(item.sourcePath, item.destDir, item.filename)
+        } else {
+          xfer.upload(item.sourcePath, item.destDir, item.filename)
+        }
+      } else {
+        // Has conflicts — check if it's a single-file conflict (skip entirely) or directory with partial conflicts (pass skipFiles)
+        const isSingleFile = itemConflicts.length === 1 && !itemConflicts[0].includes('/')
+        if (isSingleFile) {
+          // Skip entirely — don't transfer this item
+          continue
+        }
+        // Directory with conflicts — pass skipFiles
+        if (direction === 'download') {
+          xfer.download(item.sourcePath, item.destDir, item.filename, itemConflicts)
+        } else {
+          xfer.upload(item.sourcePath, item.destDir, item.filename, itemConflicts)
+        }
+      }
+    }
+  }, [pendingMultiTransfer, xfer.download, xfer.upload])
+
+  // Determine which overwrite dialog to show
+  const showingSingleOverwrite = !!pendingTransfer && !pendingMultiTransfer
+  const showingMultiOverwrite = !!pendingMultiTransfer
+
+  const aggregatedMultiConflicts = pendingMultiTransfer
+    ? pendingMultiTransfer.conflicts.flatMap(c => c.conflicts)
+    : []
 
   if (!sftp.connected && !sftp.disconnectedUnexpectedly) {
     return (
@@ -181,6 +351,8 @@ export default function App() {
         transfers={xfer.transfers}
         onDownload={handleDownload}
         onUpload={handleUpload}
+        onDownloadMulti={handleDownloadMulti}
+        onUploadMulti={handleUploadMulti}
         onCancelTransfer={xfer.cancel}
         onClearCompleted={xfer.clearCompleted}
         activeTransferCount={xfer.activeCount}
@@ -196,19 +368,34 @@ export default function App() {
       <ConfirmDialog
         open={!!pendingDelete}
         title="Delete"
-        message={pendingDelete ? `Delete "${pendingDelete.name}"? This cannot be undone.` : ''}
+        message={pendingDelete
+          ? pendingDelete.items.length === 1
+            ? `Delete "${pendingDelete.items[0].name}"? This cannot be undone.`
+            : `Delete ${pendingDelete.items.length} items? This cannot be undone.`
+          : ''}
         onConfirm={confirmDelete}
         onCancel={() => setPendingDelete(null)}
       />
 
-      {/* Transfer Overwrite Confirmation */}
+      {/* Single Transfer Overwrite Confirmation */}
       <OverwriteDialog
-        open={!!pendingTransfer}
+        open={showingSingleOverwrite}
         filename={pendingTransfer?.filename ?? ''}
         conflicts={pendingTransfer?.conflicts ?? []}
         onConfirm={confirmTransfer}
         onSkip={skipTransfer}
         onCancel={() => setPendingTransfer(null)}
+      />
+
+      {/* Multi Transfer Overwrite Confirmation */}
+      <OverwriteDialog
+        open={showingMultiOverwrite}
+        filename={pendingMultiTransfer?.items[0]?.filename ?? ''}
+        itemCount={pendingMultiTransfer?.items.length}
+        conflicts={aggregatedMultiConflicts}
+        onConfirm={confirmMultiTransfer}
+        onSkip={skipMultiTransfer}
+        onCancel={() => setPendingMultiTransfer(null)}
       />
 
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />

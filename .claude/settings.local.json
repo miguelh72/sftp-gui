@@ -3,7 +3,9 @@
     "allow": [
       "Bash(npm view:*)",
       "Bash(pnpm build:*)",
-      "Bash(gh release:*)"
+      "Bash(gh release:*)",
+      "Bash(pnpm typecheck:*)",
+      "Bash(pnpm add:*)"
     ]
   }
 }

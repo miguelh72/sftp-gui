@@ -33,6 +33,8 @@ const api = {
   // Transfers
   checkTransferConflicts: (direction: 'upload' | 'download', sourcePath: string, destDir: string, filename: string): Promise<string[]> =>
     ipcRenderer.invoke('check-transfer-conflicts', direction, sourcePath, destDir, filename),
+  checkTransferConflictsBatch: (direction: 'upload' | 'download', items: Array<{ sourcePath: string; destDir: string; filename: string }>): Promise<Array<{ filename: string; conflicts: string[] }>> =>
+    ipcRenderer.invoke('check-transfer-conflicts-batch', direction, items),
   transferDownload: (remotePath: string, localPath: string, filename: string, skipFiles?: string[]): Promise<string> =>
     ipcRenderer.invoke('transfer-download', remotePath, localPath, filename, skipFiles),
   transferUpload: (localPath: string, remotePath: string, filename: string, skipFiles?: string[]): Promise<string> =>
@@ -41,8 +43,8 @@ const api = {
   transferList: (): Promise<TransferProgress[]> => ipcRenderer.invoke('transfer-list'),
 
   // Settings
-  getSettings: (): Promise<{ maxConcurrentTransfers: number; cancelCleanup: string }> => ipcRenderer.invoke('get-settings'),
-  setSettings: (settings: { maxConcurrentTransfers: number; cancelCleanup: string }): Promise<{ maxConcurrentTransfers: number; cancelCleanup: string }> =>
+  getSettings: (): Promise<{ maxConcurrentTransfers: number; cancelCleanup: 'remove-partial' | 'remove-all' }> => ipcRenderer.invoke('get-settings'),
+  setSettings: (settings: { maxConcurrentTransfers: number; cancelCleanup: 'remove-partial' | 'remove-all' }): Promise<{ maxConcurrentTransfers: number; cancelCleanup: 'remove-partial' | 'remove-all' }> =>
     ipcRenderer.invoke('set-settings', settings),
 
   // Events from main

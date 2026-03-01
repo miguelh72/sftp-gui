@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
-import SSHConfig from 'ssh-config'
+import SSHConfig, { LineType, type Line } from 'ssh-config'
 import type { HostInfo } from './types'
 
 export function readSshConfig(): HostInfo[] {
@@ -15,7 +15,7 @@ export function readSshConfig(): HostInfo[] {
     const config = SSHConfig.parse(content)
 
     for (const section of config) {
-      if (section.type !== SSHConfig.DIRECTIVE || section.param !== 'Host') continue
+      if (section.type !== LineType.DIRECTIVE || section.param !== 'Host') continue
       const name = String(section.value)
 
       // Skip wildcards
@@ -43,10 +43,10 @@ export function readSshConfig(): HostInfo[] {
   return hosts
 }
 
-function findDirective(section: SSHConfig.Line, param: string): string | null {
+function findDirective(section: Line, param: string): string | null {
   if (!('config' in section) || !Array.isArray(section.config)) return null
   for (const line of section.config) {
-    if (line.type === SSHConfig.DIRECTIVE && line.param === param) {
+    if (line.type === LineType.DIRECTIVE && line.param === param) {
       return String(line.value)
     }
   }

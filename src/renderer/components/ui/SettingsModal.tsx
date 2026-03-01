@@ -65,7 +65,10 @@ export function SettingsModal({ open, onClose }: Props) {
           </label>
           <select
             value={cancelCleanup}
-            onChange={e => setCancelCleanup(e.target.value as 'remove-partial' | 'remove-all')}
+            onChange={e => {
+              const v = e.target.value
+              if (v === 'remove-partial' || v === 'remove-all') setCancelCleanup(v)
+            }}
             className="w-full rounded-lg border border-border bg-zinc-800 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
           >
             <option value="remove-partial">Keep completed files</option>

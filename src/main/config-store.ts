@@ -1,11 +1,9 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
+import type { AppSettings } from './schemas'
 
-export interface AppSettings {
-  maxConcurrentTransfers: number
-  cancelCleanup: 'remove-partial' | 'remove-all'
-}
+export type { AppSettings }
 
 const DEFAULT_SETTINGS: AppSettings = {
   maxConcurrentTransfers: 6,

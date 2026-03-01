@@ -5,12 +5,15 @@ interface Props {
   open: boolean
   filename: string
   conflicts: string[]
+  itemCount?: number
   onConfirm: () => void
   onSkip: () => void
   onCancel: () => void
 }
 
-export function OverwriteDialog({ open, filename, conflicts, onConfirm, onSkip, onCancel }: Props) {
+export function OverwriteDialog({ open, filename, conflicts, itemCount, onConfirm, onSkip, onCancel }: Props) {
+  const isMulti = itemCount != null && itemCount > 1
+
   return (
     <Modal open={open} onClose={onCancel}>
       <div className="p-5 space-y-4">
@@ -20,7 +23,11 @@ export function OverwriteDialog({ open, filename, conflicts, onConfirm, onSkip, 
         </div>
 
         <p className="text-sm text-muted-foreground">
-          Transferring <span className="text-foreground font-medium">"{filename}"</span> will overwrite the following {conflicts.length === 1 ? 'file' : `${conflicts.length} files`}:
+          {isMulti ? (
+            <>Transferring <span className="text-foreground font-medium">{itemCount} items</span> will overwrite the following {conflicts.length === 1 ? 'file' : `${conflicts.length} files`}:</>
+          ) : (
+            <>Transferring <span className="text-foreground font-medium">"{filename}"</span> will overwrite the following {conflicts.length === 1 ? 'file' : `${conflicts.length} files`}:</>
+          )}
         </p>
 
         <div className="rounded border border-border bg-zinc-950 max-h-48 overflow-y-auto">

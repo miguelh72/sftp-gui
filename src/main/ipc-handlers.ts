@@ -7,35 +7,34 @@ import { loadConfig, setRememberedUser, getRememberedUser, getSettings, setSetti
 import { listLocalDirectory, listDrives, deleteLocalEntry, findLocalFiles, localExists } from './local-fs'
 import { join } from 'path'
 import { TransferManager } from './transfers/transfer-manager'
-import type { ConnectionConfig, TransferProgress } from './sftp/types'
+import * as z from 'zod'
+import {
+  safePathSchema,
+  connectionConfigSchema,
+  appSettingsSchema,
+  directionSchema,
+  conflictBatchInputSchema,
+  skipFilesSchema
+} from './schemas'
+import type { TransferProgress } from './sftp/types'
 
-// --- Input Validation ---
-
-function validateString(value: unknown, name: string): string {
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new Error(`Invalid ${name}: must be a non-empty string`)
-  }
-  return value
+/** Convert ZodError to a plain Error with a human-readable message. */
+function formatZodError(err: z.ZodError): Error {
+  const msg = err.issues.map(i => {
+    const path = i.path.length > 0 ? `${i.path.join('.')}: ` : ''
+    return `${path}${i.message}`
+  }).join('; ')
+  return new Error(msg)
 }
 
-function validatePath(value: unknown, name: string): string {
-  const p = validateString(value, name)
-  if (/[\x00-\x1f\x7f]/.test(p)) {
-    throw new Error(`Invalid ${name}: contains control characters`)
+/** Rethrow ZodErrors as plain Errors with readable messages for IPC. */
+function parseOrThrow<T>(schema: { parse: (v: unknown) => T }, value: unknown): T {
+  try {
+    return schema.parse(value)
+  } catch (err) {
+    if (err instanceof z.ZodError) throw formatZodError(err)
+    throw err
   }
-  return p
-}
-
-function validateConnectionConfig(config: unknown): ConnectionConfig {
-  if (!config || typeof config !== 'object') throw new Error('Invalid connection config')
-  const c = config as Record<string, unknown>
-  const host = validateString(c.host, 'host')
-  const username = validateString(c.username, 'username')
-  const port = typeof c.port === 'number' ? c.port : NaN
-  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid port')
-  if (!/^[a-zA-Z0-9._\-:[\]]+$/.test(host)) throw new Error('Invalid hostname characters')
-  if (!/^[a-zA-Z0-9._\-]+$/.test(username)) throw new Error('Invalid username characters')
-  return { host, port, username }
 }
 
 // ---
@@ -67,11 +66,11 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('get-remembered-user', (_e, host: unknown) => {
-    return getRememberedUser(validateString(host, 'host'))
+    return getRememberedUser(parseOrThrow(safePathSchema,host))
   })
 
   ipcMain.handle('connect', async (_e, rawConfig: unknown) => {
-    const config = validateConnectionConfig(rawConfig)
+    const config = parseOrThrow(connectionConfigSchema, rawConfig)
 
     if (session?.isConnected) {
       session.disconnect()
@@ -125,7 +124,6 @@ export function registerIpcHandlers(): void {
       transferManager.destroy()
       transferManager = null
     }
-    lastConnectionConfig = null
   })
 
   // --- Remote FS ---
@@ -133,7 +131,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('remote-ls', async (_e, path: unknown) => {
     if (!session?.isConnected) return null
     try {
-      return await session.listDirectory(validatePath(path, 'remote path'))
+      return await session.listDirectory(parseOrThrow(safePathSchema,path))
     } catch {
       // Transient errors during abort/reconnect — return null so polling ignores
       return null
@@ -147,28 +145,28 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('remote-mkdir', async (_e, path: unknown) => {
     if (!session?.isConnected) throw new Error('Not connected')
-    await session.mkdir(validatePath(path, 'remote path'))
+    await session.mkdir(parseOrThrow(safePathSchema,path))
   })
 
   ipcMain.handle('remote-rm', async (_e, path: unknown) => {
     if (!session?.isConnected) throw new Error('Not connected')
-    await session.rm(validatePath(path, 'remote path'))
+    await session.rm(parseOrThrow(safePathSchema,path))
   })
 
   ipcMain.handle('remote-rmdir', async (_e, path: unknown) => {
     if (!session?.isConnected) throw new Error('Not connected')
-    await session.rmdir(validatePath(path, 'remote path'))
+    await session.rmdir(parseOrThrow(safePathSchema,path))
   })
 
   ipcMain.handle('remote-rename', async (_e, oldPath: unknown, newPath: unknown) => {
     if (!session?.isConnected) throw new Error('Not connected')
-    await session.rename(validatePath(oldPath, 'old path'), validatePath(newPath, 'new path'))
+    await session.rename(parseOrThrow(safePathSchema,oldPath), parseOrThrow(safePathSchema,newPath))
   })
 
   // --- Local FS ---
 
   ipcMain.handle('local-ls', async (_e, path: unknown) => {
-    return listLocalDirectory(validatePath(path, 'local path'))
+    return listLocalDirectory(parseOrThrow(safePathSchema,path))
   })
 
   ipcMain.handle('local-drives', () => {
@@ -180,17 +178,17 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('local-delete', async (_e, path: unknown) => {
-    await deleteLocalEntry(validatePath(path, 'local path'))
+    await deleteLocalEntry(parseOrThrow(safePathSchema,path))
   })
 
   // --- Transfer Conflict Check ---
 
-  ipcMain.handle('check-transfer-conflicts', async (_e, direction: unknown, sourcePath: unknown, destDir: unknown, filename: unknown) => {
-    const dir = validateString(direction as string, 'direction')
-    const src = validatePath(sourcePath, 'source path')
-    const dest = validatePath(destDir, 'dest dir')
-    const name = validateString(filename as string, 'filename')
-
+  async function checkConflictsForItem(
+    dir: string,
+    src: string,
+    dest: string,
+    name: string
+  ): Promise<string[]> {
     if (dir === 'download') {
       // Downloading remote → local: check what exists locally at dest/filename
       const destPath = join(dest, name)
@@ -224,9 +222,6 @@ export function registerIpcHandlers(): void {
           const localFiles = await findLocalFiles(src, name)
           const conflicts: string[] = []
           for (const relPath of localFiles) {
-            const remoteTarget = dest.endsWith('/')
-              ? dest + relPath.replace(/\\/g, '/')
-              : dest + '/' + relPath.replace(/\\/g, '/')
             try {
               // Check if file exists by listing parent and finding the name
               const parts = relPath.replace(/\\/g, '/').split('/')
@@ -249,46 +244,53 @@ export function registerIpcHandlers(): void {
         return []
       }
     }
+  }
+
+  ipcMain.handle('check-transfer-conflicts', async (_e, direction: unknown, sourcePath: unknown, destDir: unknown, filename: unknown) => {
+    const dir = parseOrThrow(directionSchema, direction)
+    const src = parseOrThrow(safePathSchema,sourcePath)
+    const dest = parseOrThrow(safePathSchema,destDir)
+    const name = parseOrThrow(safePathSchema,filename)
+    return checkConflictsForItem(dir, src, dest, name)
+  })
+
+  ipcMain.handle('check-transfer-conflicts-batch', async (_e, direction: unknown, items: unknown) => {
+    const dir = parseOrThrow(directionSchema, direction)
+    const validated = parseOrThrow(conflictBatchInputSchema, items)
+    const results: Array<{ filename: string; conflicts: string[] }> = []
+    for (const item of validated) {
+      const conflicts = await checkConflictsForItem(dir, item.sourcePath, item.destDir, item.filename)
+      results.push({ filename: item.filename, conflicts })
+    }
+    return results
   })
 
   // --- Transfers ---
 
-  ipcMain.handle('transfer-download', (_e, remotePath: unknown, localPath: unknown, filename: unknown, skipFiles: unknown) => {
+  ipcMain.handle('transfer-download', (_e, remotePath: unknown, localPath: unknown, filename: unknown, rawSkipFiles: unknown) => {
     if (!transferManager) throw new Error('Not connected')
-    let validatedSkip: string[] | undefined
-    if (skipFiles != null) {
-      if (!Array.isArray(skipFiles) || !skipFiles.every(s => typeof s === 'string')) {
-        throw new Error('Invalid skipFiles: must be an array of strings')
-      }
-      validatedSkip = skipFiles as string[]
-    }
+    const validatedSkip = parseOrThrow(skipFilesSchema, rawSkipFiles)
     return transferManager.enqueueDownload(
-      validatePath(remotePath, 'remote path'),
-      validatePath(localPath, 'local path'),
-      validateString(filename, 'filename'),
+      parseOrThrow(safePathSchema,remotePath),
+      parseOrThrow(safePathSchema,localPath),
+      parseOrThrow(safePathSchema,filename),
       validatedSkip
     )
   })
 
-  ipcMain.handle('transfer-upload', (_e, localPath: unknown, remotePath: unknown, filename: unknown, skipFiles: unknown) => {
+  ipcMain.handle('transfer-upload', (_e, localPath: unknown, remotePath: unknown, filename: unknown, rawSkipFiles: unknown) => {
     if (!transferManager) throw new Error('Not connected')
-    let validatedSkip: string[] | undefined
-    if (skipFiles != null) {
-      if (!Array.isArray(skipFiles) || !skipFiles.every(s => typeof s === 'string')) {
-        throw new Error('Invalid skipFiles: must be an array of strings')
-      }
-      validatedSkip = skipFiles as string[]
-    }
+    const validatedSkip = parseOrThrow(skipFilesSchema, rawSkipFiles)
     return transferManager.enqueueUpload(
-      validatePath(localPath, 'local path'),
-      validatePath(remotePath, 'remote path'),
-      validateString(filename, 'filename'),
+      parseOrThrow(safePathSchema,localPath),
+      parseOrThrow(safePathSchema,remotePath),
+      parseOrThrow(safePathSchema,filename),
       validatedSkip
     )
   })
 
   ipcMain.handle('transfer-cancel', async (_e, id: unknown) => {
-    await transferManager?.cancel(validateString(id, 'transfer id'))
+    await transferManager?.cancel(parseOrThrow(safePathSchema,id))
   })
 
   ipcMain.handle('transfer-list', () => {
@@ -302,21 +304,11 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('set-settings', (_e, rawSettings: unknown) => {
-    if (!rawSettings || typeof rawSettings !== 'object') throw new Error('Invalid settings')
-    const s = rawSettings as Record<string, unknown>
-    const maxConcurrent = Number(s.maxConcurrentTransfers)
-    if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > 10) {
-      throw new Error('maxConcurrentTransfers must be an integer between 1 and 10')
-    }
-    const cancelCleanup = s.cancelCleanup
-    if (cancelCleanup !== 'remove-partial' && cancelCleanup !== 'remove-all') {
-      throw new Error('cancelCleanup must be "remove-partial" or "remove-all"')
-    }
-    const settings = { maxConcurrentTransfers: maxConcurrent, cancelCleanup }
+    const settings = parseOrThrow(appSettingsSchema, rawSettings)
     setSettings(settings)
     if (transferManager) {
-      transferManager.setMaxConcurrent(maxConcurrent)
-      transferManager.setCancelCleanup(cancelCleanup)
+      transferManager.setMaxConcurrent(settings.maxConcurrentTransfers)
+      transferManager.setCancelCleanup(settings.cancelCleanup)
     }
     return settings
   })

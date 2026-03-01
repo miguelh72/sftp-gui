@@ -5,6 +5,7 @@ import { FilePane, type FilePaneHandle } from './FilePane'
 import { TransferPanel } from '../transfers/TransferPanel'
 import { ReconnectBanner } from '../ui/ReconnectBanner'
 import { SettingsModal } from '../ui/SettingsModal'
+import { useSelection } from '../../hooks/use-selection'
 import type { LocalFileEntry, RemoteFileEntry, TransferProgress } from '../../types'
 import type { DropData } from '../../hooks/use-drag-drop'
 
@@ -41,10 +42,12 @@ interface Props {
   onRefreshRemote: () => void
   onDisconnect: () => void
   transfers: TransferProgress[]
-  onDeleteLocal: (path: string, name: string, isDirectory: boolean) => void
-  onDeleteRemote: (path: string, name: string, isDirectory: boolean) => void
+  onDeleteLocal: (items: Array<{ path: string; name: string; isDirectory: boolean }>) => void
+  onDeleteRemote: (items: Array<{ path: string; name: string; isDirectory: boolean }>) => void
   onDownload: (remotePath: string, localPath: string, filename: string) => void
   onUpload: (localPath: string, remotePath: string, filename: string) => void
+  onDownloadMulti: (items: Array<{ sourcePath: string; destDir: string; filename: string; isDirectory: boolean }>) => void
+  onUploadMulti: (items: Array<{ sourcePath: string; destDir: string; filename: string; isDirectory: boolean }>) => void
   onCancelTransfer: (id: string) => void
   onClearCompleted: () => void
   activeTransferCount: number
@@ -63,7 +66,7 @@ export function FileBrowser({
   onNavigateRemote, onRefreshRemote,
   onDisconnect,
   onDeleteLocal, onDeleteRemote,
-  transfers, onDownload, onUpload, onCancelTransfer, onClearCompleted, activeTransferCount, sessionInfo,
+  transfers, onDownload, onUpload, onDownloadMulti, onUploadMulti, onCancelTransfer, onClearCompleted, activeTransferCount, sessionInfo,
   disconnectedUnexpectedly, lastHost, reconnecting, onReconnect, onDismissReconnect
 }: Props) {
   const [splitPercent, setSplitPercent] = useState(50)
@@ -74,6 +77,13 @@ export function FileBrowser({
   const draggingRef = useRef(false)
   const localPaneRef = useRef<FilePaneHandle>(null)
   const remotePaneRef = useRef<FilePaneHandle>(null)
+
+  const localSel = useSelection()
+  const remoteSel = useSelection()
+
+  // Clear selection when cwd changes
+  localSel.setCwd(localCwd)
+  remoteSel.setCwd(remoteCwd)
 
   useEffect(() => {
     if (activeTransferCount > 0) setShowTransfers(true)
@@ -139,13 +149,31 @@ export function FileBrowser({
     document.addEventListener('mouseup', onMouseUp)
   }, [])
 
-  const handleLocalDrop = useCallback((data: DropData) => {
-    onDownload(data.path, localCwd, data.name)
-  }, [localCwd, onDownload])
+  const handleLocalDrop = useCallback((items: DropData[]) => {
+    if (items.length === 1) {
+      onDownload(items[0].path, localCwd, items[0].name)
+    } else {
+      onDownloadMulti(items.map(item => ({
+        sourcePath: item.path,
+        destDir: localCwd,
+        filename: item.name,
+        isDirectory: item.isDirectory
+      })))
+    }
+  }, [localCwd, onDownload, onDownloadMulti])
 
-  const handleRemoteDrop = useCallback((data: DropData) => {
-    onUpload(data.path, remoteCwd, data.name)
-  }, [remoteCwd, onUpload])
+  const handleRemoteDrop = useCallback((items: DropData[]) => {
+    if (items.length === 1) {
+      onUpload(items[0].path, remoteCwd, items[0].name)
+    } else {
+      onUploadMulti(items.map(item => ({
+        sourcePath: item.path,
+        destDir: remoteCwd,
+        filename: item.name,
+        isDirectory: item.isDirectory
+      })))
+    }
+  }, [remoteCwd, onUpload, onUploadMulti])
 
   return (
     <div className="flex h-screen flex-col">
@@ -166,7 +194,7 @@ export function FileBrowser({
         <span className="text-sm text-muted-foreground">
           Connected to <span className="text-foreground font-medium">{remoteCwd}</span>
           <span className="ml-3 text-xs text-zinc-600">
-            F5 refresh &middot; Backspace up &middot; Ctrl+L path &middot; Tab switch pane
+            F5 refresh &middot; Backspace up &middot; Ctrl+L path &middot; Tab switch pane &middot; Ctrl+Click multi-select
           </span>
         </span>
         <div className="flex items-center gap-3">
@@ -204,11 +232,15 @@ export function FileBrowser({
             onRefresh={onRefreshLocal}
             onDelete={onDeleteLocal}
             onDrop={handleLocalDrop}
-            getItemPath={(entry) => (entry as LocalFileEntry).path || winJoin(localCwd, entry.name)}
+            getItemPath={(entry) => entry.path || winJoin(localCwd, entry.name)}
             getParentPath={(cwd) => {
               const parent = winDirname(cwd)
               return parent === cwd ? cwd : parent
             }}
+            selectedNames={localSel.selectedNames}
+            onSelect={(name, ctrlKey) => ctrlKey ? localSel.toggle(name) : localSel.clear()}
+            onClearSelection={localSel.clear}
+            onSetAllSelection={localSel.setAll}
           />
         </div>
 
@@ -242,6 +274,10 @@ export function FileBrowser({
                 : remoteCwd + '/' + entry.name
             }}
             getParentPath={remoteParent}
+            selectedNames={remoteSel.selectedNames}
+            onSelect={(name, ctrlKey) => ctrlKey ? remoteSel.toggle(name) : remoteSel.clear()}
+            onClearSelection={remoteSel.clear}
+            onSetAllSelection={remoteSel.setAll}
           />
         </div>
       </div>

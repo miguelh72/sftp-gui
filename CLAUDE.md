@@ -10,6 +10,7 @@ Lightweight Electron + React app that wraps the system's `sftp.exe` binary direc
 - node-pty (pseudo-terminal for sftp interaction)
 - framer-motion (animations, toast/list transitions)
 - ssh-config (parse ~/.ssh/config — pure JS, no SSH impl)
+- zod (IPC input validation schemas)
 - strip-ansi, uuid, lucide-react
 
 ## Architecture
@@ -34,7 +35,11 @@ Lightweight Electron + React app that wraps the system's `sftp.exe` binary direc
 
 **Folder transfer progress:** Pre-scans all files recursively to get total bytes before starting the transfer. Tracks cumulative `completedBytes` as each file completes, showing `completedBytes/totalBytes` percent.
 
+**Multi-file selection:** Ctrl+Click toggles files in a per-pane `Set<string>`. Ctrl+Drag draws a rubber-band box that selects all intersecting files (additive to existing Ctrl+Click selections). Ctrl+Drag always means rubber-band selection, never file transfer — `onDragStart` suppresses native drag when Ctrl is held. Selection clears on directory navigation, plain click, or double-click. Dragging a selected file includes all selected files. Dragging an unselected file clears selection and drags only that file. Each selected file becomes an independent transfer. Batch conflict checking via `check-transfer-conflicts-batch` IPC. Duplicate transfers (same sourcePath + direction already active/queued) are filtered with a toast.
+
 **Skip existing files:** The OverwriteDialog offers a "Skip Existing" option that transfers only non-conflicting files. The conflict paths from `check-transfer-conflicts` are prefixed with the folder name (e.g., `mydir/sub/file.txt`), while `TransferManager` file decomposition produces `relativePath` without it (e.g., `sub/file.txt`). The skip logic strips the folder prefix before comparing. For single-file conflicts, skip is equivalent to cancel.
+
+**IPC validation:** All IPC handlers use Zod schemas (`src/main/schemas.ts`) to parse unknown inputs — "parse, don't validate". Types like `ConnectionConfig`, `AppSettings`, and `TransferDirection` are inferred from schemas via `z.infer<>`, making schemas the single source of truth. No `as` type casts in validation code.
 
 **Settings:** Stored in `%APPDATA%/sftp-gui/config.json` alongside remembered users and window state. Currently supports `maxConcurrentTransfers` and `cancelCleanup`. Settings panel accessible via gear icon in the toolbar.
 
@@ -49,7 +54,8 @@ sftp-gui/
 ├── src/
 │   ├── main/                     # Electron main process
 │   │   ├── index.ts              # Window creation, IPC, CSP, window state persistence
-│   │   ├── ipc-handlers.ts       # All IPC handlers with input validation
+│   │   ├── schemas.ts            # Zod schemas for IPC input validation (source of truth for types)
+│   │   ├── ipc-handlers.ts       # All IPC handlers using Zod schema parsing
 │   │   ├── sftp/
 │   │   │   ├── session.ts        # SftpSession: pty spawn, sentinel protocol, command queue
 │   │   │   ├── output-parser.ts  # Parse ls output, progress, prompt detection
@@ -72,7 +78,9 @@ sftp-gui/
 │       │   ├── use-sftp.ts       # Remote connection, auto-refresh, reconnect state
 │       │   ├── use-local-fs.ts   # Local browsing, auto-refresh
 │       │   ├── use-transfers.ts  # Transfer progress tracking
-│       │   ├── use-drag-drop.ts  # Cross-pane drag-and-drop
+│       │   ├── use-selection.ts   # Ctrl+Click multi-file selection per pane
+│       │   ├── use-rubber-band.ts # Ctrl+Drag rubber-band box selection
+│       │   ├── use-drag-drop.ts  # Cross-pane drag-and-drop (supports DropData[] arrays)
 │       │   └── use-toasts.ts     # Transient error/info/success toasts
 │       ├── components/
 │       │   ├── ui/
@@ -123,6 +131,8 @@ pnpm typecheck  # Type-check without emitting
 | Backspace | Navigate up one directory |
 | Ctrl+L | Focus path bar as editable text input |
 | Tab | Switch active pane (local/remote) |
+| Ctrl+Click | Toggle multi-select on files |
+| Ctrl+Drag | Rubber-band box selection (additive to existing selection) |
 
 ## Security Hardening
 
@@ -169,6 +179,8 @@ gh release create vX.Y.Z --title "vX.Y.Z (<Platform>)" --notes "Release notes he
 ## Features
 
 - Dual-pane file browser (local left, remote right) with draggable splitter
+- Ctrl+Click multi-file selection with batch drag-and-drop transfers
+- Ctrl+Drag rubber-band box selection (additive, works with scroll)
 - Drag-and-drop transfers between panes with progress bars, speed, ETA
 - Folder transfer progress tracking (total bytes across all nested files)
 - Transfer cancellation with configurable cleanup (keep completed files or remove all)

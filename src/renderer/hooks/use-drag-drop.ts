@@ -10,7 +10,7 @@ export interface DropData {
 export function useDragDrop(paneType: 'local' | 'remote') {
   const [isDragOver, setIsDragOver] = useState(false)
 
-  const handleDragStart = useCallback((e: DragEvent, data: DropData) => {
+  const handleDragStart = useCallback((e: DragEvent, data: DropData[]) => {
     e.dataTransfer.setData('application/json', JSON.stringify(data))
     e.dataTransfer.effectAllowed = 'copy'
   }, [])
@@ -25,17 +25,19 @@ export function useDragDrop(paneType: 'local' | 'remote') {
     setIsDragOver(false)
   }, [])
 
-  const handleDrop = useCallback((e: DragEvent): DropData | null => {
+  const handleDrop = useCallback((e: DragEvent): DropData[] | null => {
     e.preventDefault()
     setIsDragOver(false)
 
     try {
       const raw = e.dataTransfer.getData('application/json')
       if (!raw) return null
-      const data = JSON.parse(raw) as DropData
+      const parsed = JSON.parse(raw)
+      // Normalize: accept both single object (backward compat) and array
+      const items: DropData[] = Array.isArray(parsed) ? parsed : [parsed]
       // Only accept drops from the opposite pane
-      if (data.type === paneType) return null
-      return data
+      if (items.length === 0 || items[0].type === paneType) return null
+      return items
     } catch {
       return null
     }

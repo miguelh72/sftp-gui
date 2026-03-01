@@ -6,6 +6,7 @@ import { ColumnHeader } from './ColumnHeader'
 import { FileRow } from './FileRow'
 import { sortEntries, type SortConfig, type SortField } from '../../lib/sort'
 import { useDragDrop, type DropData } from '../../hooks/use-drag-drop'
+import { useRubberBand } from '../../hooks/use-rubber-band'
 
 interface FileEntry {
   name: string
@@ -23,10 +24,14 @@ interface Props {
   loading: boolean
   onNavigate: (path: string) => void
   onRefresh: () => void
-  onDelete?: (path: string, name: string, isDirectory: boolean) => void
-  onDrop?: (data: DropData) => void
+  onDelete?: (items: Array<{ path: string; name: string; isDirectory: boolean }>) => void
+  onDrop?: (data: DropData[]) => void
   getItemPath: (entry: FileEntry) => string
   getParentPath: (cwd: string) => string
+  selectedNames: Set<string>
+  onSelect: (name: string, ctrlKey: boolean) => void
+  onClearSelection: () => void
+  onSetAllSelection: (names: Set<string>) => void
 }
 
 export interface FilePaneHandle {
@@ -45,13 +50,19 @@ export const FilePane = forwardRef<FilePaneHandle, Props>(
     onDelete,
     onDrop,
     getItemPath,
-    getParentPath
+    getParentPath,
+    selectedNames,
+    onSelect,
+    onClearSelection,
+    onSetAllSelection
   }, ref) {
     const [sort, setSort] = useState<SortConfig>({ field: 'name', direction: 'asc' })
-    const [contextMenu, setContextMenu] = useState<{ x: number; y: number; entry: FileEntry } | null>(null)
+    const [contextMenu, setContextMenu] = useState<{ x: number; y: number; entries: FileEntry[] } | null>(null)
     const { isDragOver, handleDragStart, handleDragOver, handleDragLeave, handleDrop } = useDragDrop(type)
     const breadcrumbRef = useRef<PathBreadcrumbHandle>(null)
     const contextMenuRef = useRef<HTMLDivElement>(null)
+    const fileListRef = useRef<HTMLDivElement>(null)
+    const { isActive: rubberBandActive, style: rubberBandStyle, onMouseDown: rubberBandMouseDown } = useRubberBand(fileListRef, selectedNames, onSetAllSelection)
 
     // Close context menu on click outside or scroll
     useEffect(() => {
@@ -87,15 +98,79 @@ export const FilePane = forwardRef<FilePaneHandle, Props>(
 
     const handleContextMenu = useCallback((e: MouseEvent, entry: FileEntry) => {
       e.preventDefault()
-      setContextMenu({ x: e.clientX, y: e.clientY, entry })
-    }, [])
+      if (selectedNames.has(entry.name)) {
+        // Right-clicked a selected item — context menu applies to all selected
+        const selected = sorted.filter(ent => selectedNames.has(ent.name))
+        setContextMenu({ x: e.clientX, y: e.clientY, entries: selected })
+      } else {
+        // Right-clicked an unselected item — clear selection, target just this one
+        onClearSelection()
+        setContextMenu({ x: e.clientX, y: e.clientY, entries: [entry] })
+      }
+    }, [selectedNames, sorted, onClearSelection])
 
     const handleDelete = useCallback(() => {
       if (!contextMenu || !onDelete) return
-      const entry = contextMenu.entry
-      onDelete(getItemPath(entry), entry.name, entry.isDirectory)
+      onDelete(contextMenu.entries.map(entry => ({
+        path: getItemPath(entry),
+        name: entry.name,
+        isDirectory: entry.isDirectory
+      })))
       setContextMenu(null)
     }, [contextMenu, onDelete, getItemPath])
+
+    const handleRowDragStart = useCallback((e: DragEvent, entry: FileEntry) => {
+      if (e.ctrlKey || e.metaKey) { e.preventDefault(); return }
+      let items: DropData[]
+
+      if (selectedNames.has(entry.name)) {
+        // Dragging a selected file — include all selected entries
+        items = sorted
+          .filter(ent => selectedNames.has(ent.name))
+          .map(ent => ({
+            type,
+            path: getItemPath(ent),
+            name: ent.name,
+            isDirectory: ent.isDirectory
+          }))
+      } else {
+        // Dragging an unselected file — clear selection, drag only this one
+        onClearSelection()
+        items = [{
+          type,
+          path: getItemPath(entry),
+          name: entry.name,
+          isDirectory: entry.isDirectory
+        }]
+      }
+
+      handleDragStart(e, items)
+
+      // Custom drag image badge for multi-selection
+      if (items.length > 1) {
+        const badge = document.createElement('div')
+        badge.textContent = `${items.length} items`
+        badge.style.cssText = 'position:fixed;top:-1000px;left:-1000px;background:#3b82f6;color:#fff;padding:4px 10px;border-radius:6px;font-size:13px;font-weight:500;white-space:nowrap;'
+        document.body.appendChild(badge)
+        e.dataTransfer.setDragImage(badge, badge.offsetWidth / 2, badge.offsetHeight / 2)
+        requestAnimationFrame(() => document.body.removeChild(badge))
+      }
+    }, [selectedNames, sorted, type, getItemPath, handleDragStart, onClearSelection])
+
+    const handleRowClick = useCallback((e: MouseEvent, entry: FileEntry) => {
+      if (e.ctrlKey || e.metaKey) {
+        onSelect(entry.name, true)
+      } else {
+        onClearSelection()
+      }
+    }, [onSelect, onClearSelection])
+
+    const handleListClick = useCallback((e: MouseEvent) => {
+      // Click on the empty area of the file list clears selection
+      if (e.target === e.currentTarget) {
+        onClearSelection()
+      }
+    }, [onClearSelection])
 
     const parentPath = getParentPath(cwd)
 
@@ -134,7 +209,7 @@ export const FilePane = forwardRef<FilePaneHandle, Props>(
         </div>
 
         {/* File List */}
-        <div className="flex-1 overflow-y-auto">
+        <div ref={fileListRef} className="flex-1 overflow-y-auto relative" onClick={handleListClick} onMouseDown={rubberBandMouseDown}>
           {/* Go up */}
           {parentPath !== cwd && (
             <div
@@ -164,15 +239,13 @@ export const FilePane = forwardRef<FilePaneHandle, Props>(
                   isDirectory={entry.isDirectory}
                   size={entry.size}
                   modified={entry.modified}
+                  selected={selectedNames.has(entry.name)}
                   draggable
-                  onDragStart={(e) => handleDragStart(e, {
-                    type,
-                    path: getItemPath(entry),
-                    name: entry.name,
-                    isDirectory: entry.isDirectory
-                  })}
+                  onDragStart={(e) => handleRowDragStart(e, entry)}
+                  onClick={(e) => handleRowClick(e, entry)}
                   onContextMenu={(e) => handleContextMenu(e, entry)}
                   onDoubleClick={() => {
+                    onClearSelection()
                     if (entry.isDirectory) {
                       onNavigate(getItemPath(entry))
                     }
@@ -193,6 +266,8 @@ export const FilePane = forwardRef<FilePaneHandle, Props>(
               Empty directory
             </div>
           )}
+
+          {rubberBandActive && rubberBandStyle && <div style={rubberBandStyle} />}
         </div>
 
         {/* Context Menu */}
@@ -207,7 +282,9 @@ export const FilePane = forwardRef<FilePaneHandle, Props>(
               onClick={handleDelete}
             >
               <Trash2 className="h-3.5 w-3.5" />
-              Delete {contextMenu.entry.isDirectory ? 'folder' : 'file'}
+              {contextMenu.entries.length > 1
+                ? `Delete ${contextMenu.entries.length} items`
+                : `Delete ${contextMenu.entries[0].isDirectory ? 'folder' : 'file'}`}
             </button>
           </div>
         )}

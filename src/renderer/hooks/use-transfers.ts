@@ -17,7 +17,7 @@ export function useTransfers() {
       })
     })
 
-    return unsub
+    return () => { unsub() }
   }, [])
 
   useEffect(() => {
@@ -25,7 +25,7 @@ export function useTransfers() {
       setSessionInfo(info)
     })
 
-    return unsub
+    return () => { unsub() }
   }, [])
 
   const download = useCallback(async (remotePath: string, localPath: string, filename: string, skipFiles?: string[]) => {

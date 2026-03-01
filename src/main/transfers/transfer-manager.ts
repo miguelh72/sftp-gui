@@ -307,6 +307,13 @@ export class TransferManager extends EventEmitter {
       }
     }
 
+    // Wait for killed PTY processes to fully terminate and release file handles
+    // before attempting to delete partial files. kill() signals the process but
+    // doesn't wait for exit — without this delay, cleanup races with in-flight I/O.
+    if (sessionsToKill.length > 0) {
+      await new Promise(resolve => setTimeout(resolve, 500))
+    }
+
     // Clean up based on cancel cleanup mode
     if (!meta.item.isFolder || this.cancelCleanup === 'remove-all') {
       // Single-file transfers or remove-all mode: delete the entire destination
@@ -489,42 +496,48 @@ export class TransferManager extends EventEmitter {
     this.sessionPool.push(session)
   }
 
+  private async deleteWithRetry(fn: () => Promise<void>): Promise<void> {
+    try {
+      await fn()
+    } catch {
+      // File may still be locked by the dying process — retry once after a short wait
+      await new Promise(resolve => setTimeout(resolve, 300))
+      try {
+        await fn()
+      } catch {
+        // Best-effort — file handle may still be held by OS
+      }
+    }
+  }
+
   private async cleanupPartialFiles(inFlightWork: FileWork[]): Promise<void> {
     for (const work of inFlightWork) {
-      try {
-        if (work.direction === 'download') {
-          await deleteLocalEntry(join(work.destPath, work.filename))
-        } else {
-          if (!this.mainSession.isConnected) continue
-          const target = work.destPath.endsWith('/')
-            ? work.destPath + work.filename
-            : work.destPath + '/' + work.filename
-          await this.mainSession.rm(target)
-        }
-      } catch {
-        // Best-effort
+      if (work.direction === 'download') {
+        await this.deleteWithRetry(() => deleteLocalEntry(join(work.destPath, work.filename)))
+      } else {
+        if (!this.mainSession.isConnected) continue
+        const target = work.destPath.endsWith('/')
+          ? work.destPath + work.filename
+          : work.destPath + '/' + work.filename
+        await this.deleteWithRetry(() => this.mainSession.rm(target))
       }
     }
   }
 
   private async cleanupTransfer(item: TransferItem): Promise<void> {
-    try {
-      if (item.direction === 'download') {
-        const target = join(item.localPath, item.filename)
-        await deleteLocalEntry(target)
+    if (item.direction === 'download') {
+      const target = join(item.localPath, item.filename)
+      await this.deleteWithRetry(() => deleteLocalEntry(target))
+    } else {
+      if (!this.mainSession.isConnected) return
+      const target = item.remotePath.endsWith('/')
+        ? item.remotePath + item.filename
+        : item.remotePath + '/' + item.filename
+      if (item.isFolder) {
+        await this.deleteWithRetry(() => this.mainSession.rmdir(target))
       } else {
-        if (!this.mainSession.isConnected) return
-        const target = item.remotePath.endsWith('/')
-          ? item.remotePath + item.filename
-          : item.remotePath + '/' + item.filename
-        if (item.isFolder) {
-          await this.mainSession.rmdir(target)
-        } else {
-          await this.mainSession.rm(target)
-        }
+        await this.deleteWithRetry(() => this.mainSession.rm(target))
       }
-    } catch {
-      // Best-effort
     }
   }
 

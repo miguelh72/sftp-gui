@@ -1,13 +1,15 @@
+import type { ReactElement, DragEvent, MouseEvent } from 'react'
 import { Folder, File, FileText, FileCode, FileImage, FileArchive, Film } from 'lucide-react'
 import { formatFileSize, formatDate } from '../../lib/format'
-import type { DragEvent, MouseEvent } from 'react'
 
 interface Props {
   name: string
   isDirectory: boolean
   size: number
   modified: string
+  selected?: boolean
   onDoubleClick: () => void
+  onClick?: (e: MouseEvent) => void
   onContextMenu?: (e: MouseEvent) => void
   onDragStart?: (e: DragEvent) => void
   draggable?: boolean
@@ -17,7 +19,7 @@ function getFileIcon(name: string, isDirectory: boolean) {
   if (isDirectory) return <Folder className="h-4 w-4 text-blue-400" />
 
   const ext = name.split('.').pop()?.toLowerCase() || ''
-  const iconMap: Record<string, JSX.Element> = {
+  const iconMap: Record<string, ReactElement> = {
     txt: <FileText className="h-4 w-4 text-zinc-400" />,
     md: <FileText className="h-4 w-4 text-zinc-400" />,
     log: <FileText className="h-4 w-4 text-zinc-400" />,
@@ -48,11 +50,13 @@ function getFileIcon(name: string, isDirectory: boolean) {
   return iconMap[ext] || <File className="h-4 w-4 text-zinc-500" />
 }
 
-export function FileRow({ name, isDirectory, size, modified, onDoubleClick, onContextMenu, onDragStart, draggable }: Props) {
+export function FileRow({ name, isDirectory, size, modified, selected, onDoubleClick, onClick, onContextMenu, onDragStart, draggable }: Props) {
   return (
     <div
-      className="grid grid-cols-[1fr_80px_140px] gap-2 px-3 py-1.5 text-sm hover:bg-accent cursor-default select-none transition-colors"
+      data-name={name}
+      className={`grid grid-cols-[1fr_80px_140px] gap-2 px-3 py-1.5 text-sm hover:bg-accent cursor-default select-none transition-colors ${selected ? 'bg-primary/15' : ''}`}
       onDoubleClick={onDoubleClick}
+      onClick={onClick}
       onContextMenu={onContextMenu}
       draggable={draggable}
       onDragStart={onDragStart}
