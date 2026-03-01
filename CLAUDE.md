@@ -28,9 +28,13 @@ Lightweight Electron + React app that wraps the system's `sftp.exe` binary direc
 
 **Auto-refresh:** Both panes poll every 1 second via silent background fetches. Polling returns `null` during transient states (abort/reconnect) so the UI keeps showing previous entries instead of flashing empty.
 
-**Transfer cancellation:** Kills the PTY and reconnects transparently. Uses a generation counter on the PTY to prevent stale `onExit`/`onData` handlers from corrupting the new connection. Disposes the old data listener before killing to prevent `detectDisconnection` from firing on the dying process's output. A 500ms delay between kill and reconnect avoids server-side connection rejection.
+**Concurrent transfers:** Uses a session pool model — up to `maxConcurrentTransfers` (default 6, configurable 1–10 in settings) sftp sessions created lazily and reused across transfers. The main browsing session is never used for transfers. Folder transfers are decomposed into individual file-level work items distributed across pool sessions. Directory structure is created upfront (local via `fs.mkdir`, remote via a pool session) before distributing file work.
+
+**Transfer cancellation:** For the main browsing session: kills the PTY and reconnects transparently. Uses a generation counter on the PTY to prevent stale `onExit`/`onData` handlers from corrupting the new connection. Disposes the old data listener before killing to prevent `detectDisconnection` from firing on the dying process's output. A 500ms delay between kill and reconnect avoids server-side connection rejection. For transfer sessions: removes pending work items from the queue, kills active pool sessions working on that transfer (discards from pool), and cleans up partial/completed files.
 
 **Folder transfer progress:** Pre-scans all files recursively to get total bytes before starting the transfer. Tracks cumulative `completedBytes` as each file completes, showing `completedBytes/totalBytes` percent.
+
+**Settings:** Stored in `%APPDATA%/sftp-gui/config.json` alongside remembered users and window state. Currently supports `maxConcurrentTransfers`. Settings panel accessible via gear icon in the toolbar.
 
 ## Project Structure
 
@@ -51,10 +55,10 @@ sftp-gui/
 │   │   │   ├── binary-finder.ts  # Find sftp.exe on system (execFileSync, no shell)
 │   │   │   └── types.ts
 │   │   ├── transfers/
-│   │   │   ├── transfer-manager.ts   # Queue, progress, cancel
+│   │   │   ├── transfer-manager.ts   # Session pool, file-level work queue, concurrent transfers
 │   │   │   └── transfer-item.ts
 │   │   ├── local-fs.ts           # Local readdir/stat, PowerShell drive listing
-│   │   └── config-store.ts       # %APPDATA%/sftp-gui/config.json (users, window state)
+│   │   └── config-store.ts       # %APPDATA%/sftp-gui/config.json (users, window state, settings)
 │   ├── preload/
 │   │   └── index.ts              # contextBridge API (scoped, typed)
 │   └── renderer/
@@ -74,7 +78,8 @@ sftp-gui/
 │       │   │   ├── ReconnectBanner.tsx   # Connection-lost banner with reconnect button
 │       │   │   ├── Modal.tsx            # Reusable modal backdrop with escape/click-outside
 │       │   │   ├── ConfirmDialog.tsx    # Styled delete confirmation dialog
-│       │   │   └── OverwriteDialog.tsx  # Transfer overwrite warning with file list
+│       │   │   ├── OverwriteDialog.tsx  # Transfer overwrite warning with file list
+│       │   │   └── SettingsModal.tsx   # Settings panel (max concurrent transfers)
 │       │   ├── connection/
 │       │   │   ├── ConnectionScreen.tsx
 │       │   │   ├── HostList.tsx
@@ -153,7 +158,7 @@ The following security measures are in place (from a formal audit):
 - Drag-and-drop transfers between panes with progress bars, speed, ETA
 - Folder transfer progress tracking (total bytes across all nested files)
 - Transfer cancellation with partial file cleanup (kills PTY, reconnects transparently)
-- Transfer queue (multiple transfers queued, processed sequentially)
+- Concurrent transfers via session pool (configurable 1–10 parallel sftp sessions)
 - Overwrite conflict detection with deep file scanning and confirmation modal
 - Right-click context menu with delete for both local and remote panes
 - Recursive remote folder delete (sftp has no `rm -r`)

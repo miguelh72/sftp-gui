@@ -40,6 +40,11 @@ const api = {
   transferCancel: (id: string): Promise<void> => ipcRenderer.invoke('transfer-cancel', id),
   transferList: (): Promise<TransferProgress[]> => ipcRenderer.invoke('transfer-list'),
 
+  // Settings
+  getSettings: (): Promise<{ maxConcurrentTransfers: number }> => ipcRenderer.invoke('get-settings'),
+  setSettings: (settings: { maxConcurrentTransfers: number }): Promise<{ maxConcurrentTransfers: number }> =>
+    ipcRenderer.invoke('set-settings', settings),
+
   // Events from main
   onHostKeyPrompt: (cb: (prompt: string) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, prompt: string) => cb(prompt)
@@ -55,6 +60,11 @@ const api = {
     const handler = (_e: Electron.IpcRendererEvent, data: TransferProgress) => cb(data)
     ipcRenderer.on('transfer-update', handler)
     return () => ipcRenderer.removeListener('transfer-update', handler)
+  },
+  onTransferSessionInfo: (cb: (info: { active: number; max: number }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, info: { active: number; max: number }) => cb(info)
+    ipcRenderer.on('transfer-session-info', handler)
+    return () => ipcRenderer.removeListener('transfer-session-info', handler)
   }
 }
 

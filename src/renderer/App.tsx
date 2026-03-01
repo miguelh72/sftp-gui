@@ -170,6 +170,7 @@ export default function App() {
         onCancelTransfer={xfer.cancel}
         onClearCompleted={xfer.clearCompleted}
         activeTransferCount={xfer.activeCount}
+        sessionInfo={xfer.sessionInfo}
         disconnectedUnexpectedly={sftp.disconnectedUnexpectedly}
         lastHost={sftp.lastConfig?.host ?? null}
         reconnecting={sftp.connecting}

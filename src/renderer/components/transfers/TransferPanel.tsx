@@ -7,9 +7,10 @@ interface Props {
   onCancel: (id: string) => void
   onClearCompleted: () => void
   onClose: () => void
+  sessionInfo: { active: number; max: number }
 }
 
-export function TransferPanel({ transfers, onCancel, onClearCompleted, onClose }: Props) {
+export function TransferPanel({ transfers, onCancel, onClearCompleted, onClose, sessionInfo }: Props) {
   const activeCount = transfers.filter(t => t.status === 'active' || t.status === 'queued').length
 
   return (
@@ -17,6 +18,7 @@ export function TransferPanel({ transfers, onCancel, onClearCompleted, onClose }
       <TransferControls
         activeCount={activeCount}
         totalCount={transfers.length}
+        sessionInfo={sessionInfo}
         onClearCompleted={onClearCompleted}
         onClose={onClose}
       />

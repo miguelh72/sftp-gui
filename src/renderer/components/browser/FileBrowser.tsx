@@ -1,9 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { LogOut, GripVertical } from 'lucide-react'
+import { LogOut, GripVertical, Settings } from 'lucide-react'
 import { AnimatePresence } from 'framer-motion'
 import { FilePane, type FilePaneHandle } from './FilePane'
 import { TransferPanel } from '../transfers/TransferPanel'
 import { ReconnectBanner } from '../ui/ReconnectBanner'
+import { SettingsModal } from '../ui/SettingsModal'
 import type { LocalFileEntry, RemoteFileEntry, TransferProgress } from '../../types'
 import type { DropData } from '../../hooks/use-drag-drop'
 
@@ -47,6 +48,7 @@ interface Props {
   onCancelTransfer: (id: string) => void
   onClearCompleted: () => void
   activeTransferCount: number
+  sessionInfo: { active: number; max: number }
   disconnectedUnexpectedly: boolean
   lastHost: string | null
   reconnecting: boolean
@@ -61,11 +63,12 @@ export function FileBrowser({
   onNavigateRemote, onRefreshRemote,
   onDisconnect,
   onDeleteLocal, onDeleteRemote,
-  transfers, onDownload, onUpload, onCancelTransfer, onClearCompleted, activeTransferCount,
+  transfers, onDownload, onUpload, onCancelTransfer, onClearCompleted, activeTransferCount, sessionInfo,
   disconnectedUnexpectedly, lastHost, reconnecting, onReconnect, onDismissReconnect
 }: Props) {
   const [splitPercent, setSplitPercent] = useState(50)
   const [showTransfers, setShowTransfers] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [activePane, setActivePane] = useState<'local' | 'remote'>('local')
   const containerRef = useRef<HTMLDivElement>(null)
   const draggingRef = useRef(false)
@@ -166,13 +169,21 @@ export function FileBrowser({
             F5 refresh &middot; Backspace up &middot; Ctrl+L path &middot; Tab switch pane
           </span>
         </span>
-        <button
-          onClick={onDisconnect}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-red-400 transition-colors"
-        >
-          <LogOut className="h-3.5 w-3.5" />
-          Disconnect
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowSettings(true)}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Settings className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={onDisconnect}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-red-400 transition-colors"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            Disconnect
+          </button>
+        </div>
       </div>
 
       {/* Panes */}
@@ -242,8 +253,11 @@ export function FileBrowser({
           onCancel={onCancelTransfer}
           onClearCompleted={onClearCompleted}
           onClose={() => setShowTransfers(false)}
+          sessionInfo={sessionInfo}
         />
       )}
+
+      <SettingsModal open={showSettings} onClose={() => setShowSettings(false)} />
     </div>
   )
 }

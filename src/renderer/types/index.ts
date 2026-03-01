@@ -51,3 +51,7 @@ export interface SftpInfo {
   path: string | null
   version: string | null
 }
+
+export interface AppSettings {
+  maxConcurrentTransfers: number
+}

@@ -4,6 +4,7 @@ import type { TransferProgress } from '../types'
 
 export function useTransfers() {
   const [transfers, setTransfers] = useState<TransferProgress[]>([])
+  const [sessionInfo, setSessionInfo] = useState<{ active: number; max: number }>({ active: 0, max: 6 })
 
   useEffect(() => {
     const unsub = api.onTransferUpdate((data) => {
@@ -14,6 +15,14 @@ export function useTransfers() {
         updated[idx] = data
         return updated
       })
+    })
+
+    return unsub
+  }, [])
+
+  useEffect(() => {
+    const unsub = api.onTransferSessionInfo((info) => {
+      setSessionInfo(info)
     })
 
     return unsub
@@ -43,6 +52,7 @@ export function useTransfers() {
     upload,
     cancel,
     clearCompleted,
-    activeCount
+    activeCount,
+    sessionInfo
   }
 }

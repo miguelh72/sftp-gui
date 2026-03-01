@@ -3,7 +3,7 @@ import { homedir } from 'os'
 import { SftpSession } from './sftp/session'
 import { getAllHosts } from './sftp/ssh-config-reader'
 import { findSftpBinary, getSftpVersion } from './sftp/binary-finder'
-import { loadConfig, setRememberedUser, getRememberedUser } from './config-store'
+import { loadConfig, setRememberedUser, getRememberedUser, getSettings, setSettings } from './config-store'
 import { listLocalDirectory, listDrives, deleteLocalEntry, findLocalFiles, localExists } from './local-fs'
 import { join } from 'path'
 import { TransferManager } from './transfers/transfer-manager'
@@ -86,13 +86,17 @@ export function registerIpcHandlers(): void {
     session.on('disconnected', (code: number) => {
       sendToRenderer('disconnected', code)
       session = null
-      transferManager = null
+      if (transferManager) {
+        transferManager.destroy()
+        transferManager = null
+      }
     })
 
     await session.connect(config)
     setRememberedUser(config.host, config.username)
 
-    transferManager = new TransferManager(session)
+    const settings = getSettings()
+    transferManager = new TransferManager(session, config, settings.maxConcurrentTransfers)
 
     const progressEvents = ['queued', 'started', 'progress', 'completed', 'failed', 'cancelled'] as const
     for (const event of progressEvents) {
@@ -100,6 +104,10 @@ export function registerIpcHandlers(): void {
         sendToRenderer('transfer-update', data)
       })
     }
+
+    transferManager.on('session-info', (info: { active: number; max: number }) => {
+      sendToRenderer('transfer-session-info', info)
+    })
 
     const cwd = await session.pwd()
     return { connected: true, cwd }
@@ -113,7 +121,11 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('disconnect', () => {
     session?.disconnect()
     session = null
-    transferManager = null
+    if (transferManager) {
+      transferManager.destroy()
+      transferManager = null
+    }
+    lastConnectionConfig = null
   })
 
   // --- Remote FS ---
@@ -265,5 +277,26 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('transfer-list', () => {
     return transferManager?.getAll() ?? []
+  })
+
+  // --- Settings ---
+
+  ipcMain.handle('get-settings', () => {
+    return getSettings()
+  })
+
+  ipcMain.handle('set-settings', (_e, rawSettings: unknown) => {
+    if (!rawSettings || typeof rawSettings !== 'object') throw new Error('Invalid settings')
+    const s = rawSettings as Record<string, unknown>
+    const maxConcurrent = Number(s.maxConcurrentTransfers)
+    if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > 10) {
+      throw new Error('maxConcurrentTransfers must be an integer between 1 and 10')
+    }
+    const settings = { maxConcurrentTransfers: maxConcurrent }
+    setSettings(settings)
+    if (transferManager) {
+      transferManager.setMaxConcurrent(maxConcurrent)
+    }
+    return settings
   })
 }

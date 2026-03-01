@@ -2,6 +2,14 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs'
 import { join } from 'path'
 import { app } from 'electron'
 
+export interface AppSettings {
+  maxConcurrentTransfers: number
+}
+
+const DEFAULT_SETTINGS: AppSettings = {
+  maxConcurrentTransfers: 6
+}
+
 interface AppConfig {
   rememberedUsers: Record<string, string> // host -> username
   windowState?: {
@@ -11,6 +19,7 @@ interface AppConfig {
     y?: number
     maximized?: boolean
   }
+  settings?: AppSettings
 }
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -53,5 +62,16 @@ export function getWindowState(): AppConfig['windowState'] {
 export function setWindowState(state: NonNullable<AppConfig['windowState']>): void {
   const config = loadConfig()
   config.windowState = state
+  saveConfig(config)
+}
+
+export function getSettings(): AppSettings {
+  const config = loadConfig()
+  return { ...DEFAULT_SETTINGS, ...config.settings }
+}
+
+export function setSettings(settings: AppSettings): void {
+  const config = loadConfig()
+  config.settings = settings
   saveConfig(config)
 }
