@@ -339,8 +339,11 @@ export class SftpSession extends EventEmitter {
 
   private checkSftpError(output: string): void {
     if (!output) return
-    // sftp errors start with known prefixes; ignore informational messages like "Removing ..."
+    // sftp errors: known prefixes at start of line, or trailing ": Failure" / ": Permission denied"
     if (/^(Couldn't|Cannot|Permission denied|Failure|No such|remote \w+:)/im.test(output)) {
+      throw new Error(output)
+    }
+    if (/:\s*(Failure|Permission denied|No such file or directory)\s*$/m.test(output)) {
       throw new Error(output)
     }
   }
@@ -368,15 +371,18 @@ export class SftpSession extends EventEmitter {
   }
 
   async rename(oldPath: string, newPath: string): Promise<void> {
-    await this.execute(`rename ${this.escapePath(oldPath)} ${this.escapePath(newPath)}`)
+    const output = await this.execute(`rename ${this.escapePath(oldPath)} ${this.escapePath(newPath)}`)
+    this.checkSftpError(output)
   }
 
   async download(remotePath: string, localPath: string): Promise<void> {
-    await this.execute(`get -r ${this.escapePath(remotePath)} ${this.escapePath(localPath)}`)
+    const output = await this.execute(`get -r ${this.escapePath(remotePath)} ${this.escapePath(localPath)}`)
+    this.checkSftpError(output)
   }
 
   async upload(localPath: string, remotePath: string): Promise<void> {
-    await this.execute(`put -r ${this.escapePath(localPath)} ${this.escapePath(remotePath)}`)
+    const output = await this.execute(`put -r ${this.escapePath(localPath)} ${this.escapePath(remotePath)}`)
+    this.checkSftpError(output)
   }
 
   private escapePath(p: string): string {
