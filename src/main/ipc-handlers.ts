@@ -253,21 +253,37 @@ export function registerIpcHandlers(): void {
 
   // --- Transfers ---
 
-  ipcMain.handle('transfer-download', (_e, remotePath: unknown, localPath: unknown, filename: unknown) => {
+  ipcMain.handle('transfer-download', (_e, remotePath: unknown, localPath: unknown, filename: unknown, skipFiles: unknown) => {
     if (!transferManager) throw new Error('Not connected')
+    let validatedSkip: string[] | undefined
+    if (skipFiles != null) {
+      if (!Array.isArray(skipFiles) || !skipFiles.every(s => typeof s === 'string')) {
+        throw new Error('Invalid skipFiles: must be an array of strings')
+      }
+      validatedSkip = skipFiles as string[]
+    }
     return transferManager.enqueueDownload(
       validatePath(remotePath, 'remote path'),
       validatePath(localPath, 'local path'),
-      validateString(filename, 'filename')
+      validateString(filename, 'filename'),
+      validatedSkip
     )
   })
 
-  ipcMain.handle('transfer-upload', (_e, localPath: unknown, remotePath: unknown, filename: unknown) => {
+  ipcMain.handle('transfer-upload', (_e, localPath: unknown, remotePath: unknown, filename: unknown, skipFiles: unknown) => {
     if (!transferManager) throw new Error('Not connected')
+    let validatedSkip: string[] | undefined
+    if (skipFiles != null) {
+      if (!Array.isArray(skipFiles) || !skipFiles.every(s => typeof s === 'string')) {
+        throw new Error('Invalid skipFiles: must be an array of strings')
+      }
+      validatedSkip = skipFiles as string[]
+    }
     return transferManager.enqueueUpload(
       validatePath(localPath, 'local path'),
       validatePath(remotePath, 'remote path'),
-      validateString(filename, 'filename')
+      validateString(filename, 'filename'),
+      validatedSkip
     )
   })
 

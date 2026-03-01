@@ -1,6 +1,5 @@
 # TODO
 
-- Add setting to enable skip when transfering and some files are found to override.
 - Allow moving multiple selected files at once
     - Allow Ctrl+Click multi-file select
     - Allow Ctrl+Drag multi-file select

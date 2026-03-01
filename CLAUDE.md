@@ -34,6 +34,8 @@ Lightweight Electron + React app that wraps the system's `sftp.exe` binary direc
 
 **Folder transfer progress:** Pre-scans all files recursively to get total bytes before starting the transfer. Tracks cumulative `completedBytes` as each file completes, showing `completedBytes/totalBytes` percent.
 
+**Skip existing files:** The OverwriteDialog offers a "Skip Existing" option that transfers only non-conflicting files. The conflict paths from `check-transfer-conflicts` are prefixed with the folder name (e.g., `mydir/sub/file.txt`), while `TransferManager` file decomposition produces `relativePath` without it (e.g., `sub/file.txt`). The skip logic strips the folder prefix before comparing. For single-file conflicts, skip is equivalent to cancel.
+
 **Settings:** Stored in `%APPDATA%/sftp-gui/config.json` alongside remembered users and window state. Currently supports `maxConcurrentTransfers` and `cancelCleanup`. Settings panel accessible via gear icon in the toolbar.
 
 ## Project Structure
@@ -78,7 +80,7 @@ sftp-gui/
 │       │   │   ├── ReconnectBanner.tsx   # Connection-lost banner with reconnect button
 │       │   │   ├── Modal.tsx            # Reusable modal backdrop with escape/click-outside
 │       │   │   ├── ConfirmDialog.tsx    # Styled delete confirmation dialog
-│       │   │   ├── OverwriteDialog.tsx  # Transfer overwrite warning with file list
+│       │   │   ├── OverwriteDialog.tsx  # Transfer overwrite warning with file list (overwrite/skip/cancel)
 │       │   │   └── SettingsModal.tsx   # Settings panel (max concurrent transfers, cancel cleanup)
 │       │   ├── connection/
 │       │   │   ├── ConnectionScreen.tsx
@@ -142,6 +144,18 @@ The following security measures are in place (from a formal audit):
 - **Exact versions only**: All dependencies in `package.json` must use exact versions (no `^` or `~` prefixes). This prevents silent upgrades via transitive lockfile changes and reduces supply chain attack surface.
 - **Review before upgrading**: When upgrading a dependency, verify the new version against the npm registry and changelog before changing the pinned version.
 
+## Releases
+
+Asset naming: `sftp-gui-portable-<platform>-<arch>.zip` (e.g., `win-x64`, `linux-arm64`). Title format: `vX.Y.Z (<Platform>)`. Determine the platform and architecture from the build output in `dist/`.
+
+The build currently produces a portable directory (not a single exe). The zip contains a folder — users extract and run from it.
+
+```bash
+pnpm package                          # Build portable output to dist/
+# Zip the output, then:
+gh release create vX.Y.Z --title "vX.Y.Z (<Platform>)" --notes "Release notes here" sftp-gui-portable-<platform>-<arch>.zip
+```
+
 ## Key Design Decisions
 
 - **node-pty over child_process**: sftp requires a TTY for interactive prompts
@@ -159,7 +173,8 @@ The following security measures are in place (from a formal audit):
 - Folder transfer progress tracking (total bytes across all nested files)
 - Transfer cancellation with configurable cleanup (keep completed files or remove all)
 - Concurrent transfers via session pool (configurable 1–10 parallel sftp sessions)
-- Overwrite conflict detection with deep file scanning and confirmation modal
+- Overwrite conflict detection with deep file scanning and confirmation modal (overwrite, skip existing, or cancel)
+- Transfer panel shows full source path (local path for uploads, remote path for downloads)
 - Right-click context menu with delete for both local and remote panes
 - Recursive remote folder delete (sftp has no `rm -r`)
 - SSH config + known_hosts parsing with searchable host list

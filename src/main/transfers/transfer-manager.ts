@@ -113,7 +113,7 @@ export class TransferManager extends EventEmitter {
     this.cancelCleanup = mode
   }
 
-  async enqueueDownload(remotePath: string, localPath: string, filename: string): Promise<string> {
+  async enqueueDownload(remotePath: string, localPath: string, filename: string, skipFiles?: string[]): Promise<string> {
     const id = uuidv4()
     const item = new TransferItem({ id, filename, direction: 'download', localPath, remotePath })
 
@@ -125,7 +125,17 @@ export class TransferManager extends EventEmitter {
       const entry = parentEntries.find(e => e.name === dirName)
 
       if (entry?.isDirectory) {
-        const files = await collectRemoteFiles(this.mainSession, remotePath, '')
+        let files = await collectRemoteFiles(this.mainSession, remotePath, '')
+
+        // Filter out skipped files
+        if (skipFiles && skipFiles.length > 0) {
+          const skipSet = new Set(skipFiles.map(s => {
+            const slashIdx = s.indexOf('/')
+            return slashIdx === -1 ? s : s.substring(slashIdx + 1)
+          }))
+          files = files.filter(f => !skipSet.has(f.relativePath))
+        }
+
         const totalBytes = files.reduce((sum, f) => sum + f.size, 0)
         item.setFileSizes(files.map(f => ({ name: f.name, size: f.size })), totalBytes)
 
@@ -184,14 +194,24 @@ export class TransferManager extends EventEmitter {
     return id
   }
 
-  async enqueueUpload(localPath: string, remotePath: string, filename: string): Promise<string> {
+  async enqueueUpload(localPath: string, remotePath: string, filename: string, skipFiles?: string[]): Promise<string> {
     const id = uuidv4()
     const item = new TransferItem({ id, filename, direction: 'upload', localPath, remotePath })
 
     try {
       const stats = await stat(localPath)
       if (stats.isDirectory()) {
-        const files = await collectLocalFiles(localPath, '')
+        let files = await collectLocalFiles(localPath, '')
+
+        // Filter out skipped files
+        if (skipFiles && skipFiles.length > 0) {
+          const skipSet = new Set(skipFiles.map(s => {
+            const slashIdx = s.indexOf('/')
+            return slashIdx === -1 ? s : s.substring(slashIdx + 1)
+          }))
+          files = files.filter(f => !skipSet.has(f.relativePath))
+        }
+
         const totalBytes = files.reduce((sum, f) => sum + f.size, 0)
         item.setFileSizes(files.map(f => ({ name: f.name, size: f.size })), totalBytes)
 

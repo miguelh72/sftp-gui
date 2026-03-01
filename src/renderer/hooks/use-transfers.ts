@@ -28,12 +28,12 @@ export function useTransfers() {
     return unsub
   }, [])
 
-  const download = useCallback(async (remotePath: string, localPath: string, filename: string) => {
-    return api.transferDownload(remotePath, localPath, filename)
+  const download = useCallback(async (remotePath: string, localPath: string, filename: string, skipFiles?: string[]) => {
+    return api.transferDownload(remotePath, localPath, filename, skipFiles)
   }, [])
 
-  const upload = useCallback(async (localPath: string, remotePath: string, filename: string) => {
-    return api.transferUpload(localPath, remotePath, filename)
+  const upload = useCallback(async (localPath: string, remotePath: string, filename: string, skipFiles?: string[]) => {
+    return api.transferUpload(localPath, remotePath, filename, skipFiles)
   }, [])
 
   const cancel = useCallback(async (id: string) => {

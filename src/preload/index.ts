@@ -33,16 +33,16 @@ const api = {
   // Transfers
   checkTransferConflicts: (direction: 'upload' | 'download', sourcePath: string, destDir: string, filename: string): Promise<string[]> =>
     ipcRenderer.invoke('check-transfer-conflicts', direction, sourcePath, destDir, filename),
-  transferDownload: (remotePath: string, localPath: string, filename: string): Promise<string> =>
-    ipcRenderer.invoke('transfer-download', remotePath, localPath, filename),
-  transferUpload: (localPath: string, remotePath: string, filename: string): Promise<string> =>
-    ipcRenderer.invoke('transfer-upload', localPath, remotePath, filename),
+  transferDownload: (remotePath: string, localPath: string, filename: string, skipFiles?: string[]): Promise<string> =>
+    ipcRenderer.invoke('transfer-download', remotePath, localPath, filename, skipFiles),
+  transferUpload: (localPath: string, remotePath: string, filename: string, skipFiles?: string[]): Promise<string> =>
+    ipcRenderer.invoke('transfer-upload', localPath, remotePath, filename, skipFiles),
   transferCancel: (id: string): Promise<void> => ipcRenderer.invoke('transfer-cancel', id),
   transferList: (): Promise<TransferProgress[]> => ipcRenderer.invoke('transfer-list'),
 
   // Settings
-  getSettings: (): Promise<{ maxConcurrentTransfers: number }> => ipcRenderer.invoke('get-settings'),
-  setSettings: (settings: { maxConcurrentTransfers: number }): Promise<{ maxConcurrentTransfers: number }> =>
+  getSettings: (): Promise<{ maxConcurrentTransfers: number; cancelCleanup: string }> => ipcRenderer.invoke('get-settings'),
+  setSettings: (settings: { maxConcurrentTransfers: number; cancelCleanup: string }): Promise<{ maxConcurrentTransfers: number; cancelCleanup: string }> =>
     ipcRenderer.invoke('set-settings', settings),
 
   // Events from main

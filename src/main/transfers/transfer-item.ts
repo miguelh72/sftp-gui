@@ -99,7 +99,8 @@ export class TransferItem implements TransferProgress {
       eta: this.eta,
       status: this.status,
       error: this.error,
-      isFolder: this.isFolder || undefined
+      isFolder: this.isFolder || undefined,
+      sourcePath: this.direction === 'upload' ? this.localPath : this.remotePath
     }
   }
 }

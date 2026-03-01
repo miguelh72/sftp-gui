@@ -18,9 +18,9 @@ export function TransferRow({ transfer, onCancel }: Props) {
         : <Upload className="h-3.5 w-3.5 text-blue-400 shrink-0" />
       }
 
-      {/* Filename + current file */}
+      {/* Source path + current file */}
       <div className="truncate flex-1 min-w-0">
-        <span>{transfer.filename}</span>
+        <span title={transfer.sourcePath}>{transfer.sourcePath ?? transfer.filename}</span>
         {transfer.currentFile && isActive && (
           <span className="text-xs text-muted-foreground ml-2">({transfer.currentFile})</span>
         )}

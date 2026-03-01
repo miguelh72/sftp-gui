@@ -44,6 +44,7 @@ export interface TransferProgress {
   status: 'queued' | 'active' | 'completed' | 'failed' | 'cancelled'
   error?: string
   isFolder?: boolean
+  sourcePath?: string
 }
 
 export interface SftpInfo {

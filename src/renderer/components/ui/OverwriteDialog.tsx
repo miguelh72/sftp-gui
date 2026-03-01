@@ -6,10 +6,11 @@ interface Props {
   filename: string
   conflicts: string[]
   onConfirm: () => void
+  onSkip: () => void
   onCancel: () => void
 }
 
-export function OverwriteDialog({ open, filename, conflicts, onConfirm, onCancel }: Props) {
+export function OverwriteDialog({ open, filename, conflicts, onConfirm, onSkip, onCancel }: Props) {
   return (
     <Modal open={open} onClose={onCancel}>
       <div className="p-5 space-y-4">
@@ -36,6 +37,12 @@ export function OverwriteDialog({ open, filename, conflicts, onConfirm, onCancel
             className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-accent transition-colors"
           >
             Cancel
+          </button>
+          <button
+            onClick={onSkip}
+            className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-accent transition-colors"
+          >
+            Skip Existing
           </button>
           <button
             onClick={onConfirm}

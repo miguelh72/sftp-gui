@@ -129,6 +129,20 @@ export default function App() {
     }
   }, [pendingTransfer, xfer.download, xfer.upload])
 
+  const skipTransfer = useCallback(() => {
+    if (!pendingTransfer) return
+    const { direction, sourcePath, destDir, filename, conflicts } = pendingTransfer
+    setPendingTransfer(null)
+    // For single-file conflicts, skip is the same as cancel — just don't transfer
+    const isSingleFile = conflicts.length === 1 && !conflicts[0].includes('/')
+    if (isSingleFile) return
+    if (direction === 'download') {
+      xfer.download(sourcePath, destDir, filename, conflicts)
+    } else {
+      xfer.upload(sourcePath, destDir, filename, conflicts)
+    }
+  }, [pendingTransfer, xfer.download, xfer.upload])
+
   if (!sftp.connected && !sftp.disconnectedUnexpectedly) {
     return (
       <>
@@ -193,6 +207,7 @@ export default function App() {
         filename={pendingTransfer?.filename ?? ''}
         conflicts={pendingTransfer?.conflicts ?? []}
         onConfirm={confirmTransfer}
+        onSkip={skipTransfer}
         onCancel={() => setPendingTransfer(null)}
       />
 

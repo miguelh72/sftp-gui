@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(npm view:*)",
-      "Bash(pnpm build:*)"
+      "Bash(pnpm build:*)",
+      "Bash(gh release:*)"
     ]
   }
 }
