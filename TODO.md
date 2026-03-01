@@ -5,3 +5,5 @@
 - Allow Ctrl+Click multi-file select
 - Allow Ctrl+Drag multi-file select
 - Allow moving multiple selected files at once
+- Add ESLint and Prettier rules for the project
+- Change build to generate a single .exe file on Windows
