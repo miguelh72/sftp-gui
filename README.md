@@ -2,6 +2,12 @@
 
 Lightweight dual-pane file manager for SFTP, built with Electron and React.
 
+<p align="center">
+  <img src="docs/images/connect-view.png" width="45%" alt="Connection screen" />
+  &nbsp;&nbsp;
+  <img src="docs/images/transfering-view.png" width="45%" alt="File browser with active transfer" />
+</p>
+
 ## Why?
 
 Most graphical SFTP clients — [WinSCP](https://winscp.net/), [FileZilla](https://filezilla-project.org/), [Cyberduck](https://cyberduck.io/), [MobaXterm](https://mobaxterm.mobatek.net/) — bundle their own SSH implementation. This means:
