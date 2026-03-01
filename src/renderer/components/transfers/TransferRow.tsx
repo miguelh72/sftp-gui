@@ -1,4 +1,4 @@
-import { Download, Upload, X, Check, AlertCircle, Loader2 } from 'lucide-react'
+import { Download, Upload, X, Check, AlertCircle } from 'lucide-react'
 import type { TransferProgress } from '../../types'
 
 interface Props {
@@ -8,6 +8,7 @@ interface Props {
 
 export function TransferRow({ transfer, onCancel }: Props) {
   const isActive = transfer.status === 'active' || transfer.status === 'queued'
+  const isFolderTransfer = !!transfer.isFolder
 
   return (
     <div className="flex items-center gap-3 px-3 py-2 text-sm hover:bg-accent/50 transition-colors">
@@ -17,8 +18,13 @@ export function TransferRow({ transfer, onCancel }: Props) {
         : <Upload className="h-3.5 w-3.5 text-blue-400 shrink-0" />
       }
 
-      {/* Filename */}
-      <span className="truncate flex-1 min-w-0">{transfer.filename}</span>
+      {/* Filename + current file */}
+      <div className="truncate flex-1 min-w-0">
+        <span>{transfer.filename}</span>
+        {transfer.currentFile && isActive && (
+          <span className="text-xs text-muted-foreground ml-2">({transfer.currentFile})</span>
+        )}
+      </div>
 
       {/* Progress bar */}
       {isActive && (

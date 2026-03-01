@@ -55,7 +55,7 @@ export function useSftp() {
       pollingRef.current = true
       try {
         const entries = await api.remoteLs(cwdRef.current)
-        setRemoteEntries(entries)
+        if (entries) setRemoteEntries(entries)
       } catch {
         // Silent fail on polling
       } finally {
@@ -116,9 +116,11 @@ export function useSftp() {
     setRemoteLoading(true)
     try {
       const entries = await api.remoteLs(path)
-      setRemoteEntries(entries)
-      setRemoteCwd(path)
-      cwdRef.current = path
+      if (entries) {
+        setRemoteEntries(entries)
+        setRemoteCwd(path)
+        cwdRef.current = path
+      }
     } catch (err) {
       setError(String(err))
     } finally {
@@ -137,7 +139,7 @@ export function useSftp() {
     cwdRef.current = path
     try {
       const entries = await api.remoteLs(path)
-      setRemoteEntries(entries)
+      if (entries) setRemoteEntries(entries)
     } catch (err) {
       setError(String(err))
     } finally {

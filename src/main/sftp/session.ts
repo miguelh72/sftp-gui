@@ -8,6 +8,7 @@ import {
   detectAuthPrompt,
   detectSftpPrompt,
   detectConnectionError,
+  detectDisconnection,
   parseLsOutput,
   parseTransferProgress
 } from './output-parser'
@@ -24,6 +25,9 @@ export class SftpSession extends EventEmitter {
   private connected = false
   private connecting = false
   private binaryPath: string
+  private lastConfig: ConnectionConfig | null = null
+  private ptyGeneration = 0
+  private dataDisposable: { dispose(): void } | null = null
 
   constructor() {
     super()
@@ -57,6 +61,7 @@ export class SftpSession extends EventEmitter {
 
     this.connecting = true
     this.buffer = ''
+    this.lastConfig = config
 
     const args: string[] = []
     if (config.port !== 22) {
@@ -140,13 +145,18 @@ export class SftpSession extends EventEmitter {
           resolve()
 
           // Set up ongoing data handling (now the only listener)
-          this.ptyProcess!.onData(this.handleData.bind(this))
+          this.dataDisposable = this.ptyProcess!.onData(this.handleData.bind(this))
           return
         }
       })
 
+      const generation = this.ptyGeneration
       this.ptyProcess.onExit(({ exitCode }) => {
         clearTimeout(connectTimeout)
+
+        // If abort() incremented the generation, this is a stale PTY — skip cleanup
+        if (generation !== this.ptyGeneration) return
+
         this.connected = false
         this.connecting = false
         this.ptyProcess = null
@@ -178,13 +188,27 @@ export class SftpSession extends EventEmitter {
   private handleData(data: string): void {
     const clean = stripAnsi(data)
 
-    // Check for transfer progress (\r-overwritten lines)
-    if (data.includes('\r') && !data.includes('\n')) {
-      const progress = parseTransferProgress(clean.trim())
-      if (progress) {
-        this.emit('transfer-progress', progress)
-        return
+    // Check for transfer progress lines.
+    // sftp overwrites progress with \r. On Unix this is \r without \n.
+    // On Windows conpty, \r may be followed by \n or arrive in mixed chunks.
+    // Try to parse each \r-delimited segment as a progress line.
+    if (clean.includes('\r')) {
+      const segments = clean.split('\r')
+      let allProgress = true
+      let anyProgress = false
+      for (const seg of segments) {
+        const trimmed = seg.replace(/\n/g, '').trim()
+        if (!trimmed) continue
+        const progress = parseTransferProgress(trimmed)
+        if (progress) {
+          this.emit('transfer-progress', progress)
+          anyProgress = true
+        } else {
+          allProgress = false
+        }
       }
+      // If entire chunk was progress lines, don't buffer it
+      if (allProgress && anyProgress) return
     }
 
     // Normalize \r\n to \n (conpty on Windows produces \r\n)
@@ -210,8 +234,8 @@ export class SftpSession extends EventEmitter {
       }
     }
 
-    // Check for disconnection
-    if (detectConnectionError(clean)) {
+    // Check for disconnection (only real connection loss, not command errors)
+    if (detectDisconnection(clean)) {
       this.connected = false
       this.emit('disconnected', -1)
     }
@@ -267,6 +291,39 @@ export class SftpSession extends EventEmitter {
     return parseLsOutput(output)
   }
 
+  async listDirectoryRecursive(remotePath: string, prefix: string): Promise<string[]> {
+    const entries = await this.listDirectory(remotePath)
+    const results: string[] = []
+    for (const entry of entries) {
+      const childPath = remotePath.endsWith('/')
+        ? remotePath + entry.name
+        : remotePath + '/' + entry.name
+      const relativePath = prefix ? prefix + '/' + entry.name : entry.name
+      if (entry.isDirectory) {
+        results.push(...await this.listDirectoryRecursive(childPath, relativePath))
+      } else {
+        results.push(relativePath)
+      }
+    }
+    return results
+  }
+
+  async totalSize(remotePath: string): Promise<number> {
+    const entries = await this.listDirectory(remotePath)
+    let total = 0
+    for (const entry of entries) {
+      const childPath = remotePath.endsWith('/')
+        ? remotePath + entry.name
+        : remotePath + '/' + entry.name
+      if (entry.isDirectory) {
+        total += await this.totalSize(childPath)
+      } else {
+        total += entry.size
+      }
+    }
+    return total
+  }
+
   async pwd(): Promise<string> {
     const output = await this.execute('pwd')
     return output.trim().replace(/^Remote working directory:\s*/, '')
@@ -280,8 +337,17 @@ export class SftpSession extends EventEmitter {
     await this.execute(`mkdir ${this.escapePath(remotePath)}`)
   }
 
+  private checkSftpError(output: string): void {
+    if (!output) return
+    // sftp errors start with known prefixes; ignore informational messages like "Removing ..."
+    if (/^(Couldn't|Cannot|Permission denied|Failure|No such|remote \w+:)/im.test(output)) {
+      throw new Error(output)
+    }
+  }
+
   async rm(remotePath: string): Promise<void> {
-    await this.execute(`rm ${this.escapePath(remotePath)}`)
+    const output = await this.execute(`rm ${this.escapePath(remotePath)}`)
+    this.checkSftpError(output)
   }
 
   async rmdir(remotePath: string): Promise<void> {
@@ -297,7 +363,8 @@ export class SftpSession extends EventEmitter {
         await this.rm(childPath)
       }
     }
-    await this.execute(`rmdir ${this.escapePath(remotePath)}`)
+    const output = await this.execute(`rmdir ${this.escapePath(remotePath)}`)
+    this.checkSftpError(output)
   }
 
   async rename(oldPath: string, newPath: string): Promise<void> {
@@ -321,6 +388,45 @@ export class SftpSession extends EventEmitter {
     // Escape backslashes and double quotes, then always wrap in double quotes
     const escaped = p.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
     return `"${escaped}"`
+  }
+
+  async abort(): Promise<void> {
+    if (!this.ptyProcess) return
+    if (!this.lastConfig) throw new Error('No connection config available for reconnect')
+
+    // Invalidate the old PTY's onExit handler before any async work
+    this.ptyGeneration++
+
+    // Reject current command and all queued commands
+    if (this.currentCommand) {
+      this.currentCommand.reject(new Error('Transfer cancelled'))
+      this.currentCommand = null
+    }
+    for (const cmd of this.commandQueue) {
+      cmd.reject(new Error('Transfer cancelled'))
+    }
+    this.commandQueue = []
+
+    // Dispose the old data listener so dying PTY output doesn't trigger detectDisconnection
+    if (this.dataDisposable) {
+      this.dataDisposable.dispose()
+      this.dataDisposable = null
+    }
+
+    // Kill the PTY — the old onExit handler will see a stale generation and skip
+    if (this.ptyProcess) {
+      this.ptyProcess.kill()
+      this.ptyProcess = null
+    }
+    this.connected = false
+    this.connecting = false
+    this.buffer = ''
+
+    // Wait for the server to finish cleaning up the old connection before reconnecting
+    await new Promise(resolve => setTimeout(resolve, 500))
+
+    // Reconnect transparently with the same config
+    await this.connect(this.lastConfig)
   }
 
   disconnect(): void {

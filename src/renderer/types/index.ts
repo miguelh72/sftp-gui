@@ -34,6 +34,7 @@ export interface ConnectionConfig {
 export interface TransferProgress {
   id: string
   filename: string
+  currentFile?: string
   direction: 'upload' | 'download'
   percent: number
   transferred: number
@@ -42,6 +43,7 @@ export interface TransferProgress {
   eta: string
   status: 'queued' | 'active' | 'completed' | 'failed' | 'cancelled'
   error?: string
+  isFolder?: boolean
 }
 
 export interface SftpInfo {

@@ -26,7 +26,7 @@ export function TransferPanel({ transfers, onCancel, onClearCompleted, onClose }
             No transfers
           </div>
         ) : (
-          transfers.map(t => (
+          [...transfers].reverse().map(t => (
             <TransferRow key={t.id} transfer={t} onCancel={() => onCancel(t.id)} />
           ))
         )}

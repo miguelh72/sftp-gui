@@ -42,6 +42,34 @@ export async function deleteLocalEntry(filePath: string): Promise<void> {
   }
 }
 
+export async function findLocalFiles(dirPath: string, prefix: string): Promise<string[]> {
+  const results: string[] = []
+  try {
+    const entries = await readdir(dirPath, { withFileTypes: true })
+    for (const entry of entries) {
+      const fullPath = join(dirPath, entry.name)
+      const relativePath = prefix ? prefix + '/' + entry.name : entry.name
+      if (entry.isDirectory()) {
+        results.push(...await findLocalFiles(fullPath, relativePath))
+      } else {
+        results.push(relativePath)
+      }
+    }
+  } catch {
+    // Permission errors — skip
+  }
+  return results
+}
+
+export async function localExists(filePath: string): Promise<boolean> {
+  try {
+    await stat(filePath)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function listDrives(): string[] {
   try {
     const result = execSync(

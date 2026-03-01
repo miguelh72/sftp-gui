@@ -4,7 +4,8 @@ import { SftpSession } from './sftp/session'
 import { getAllHosts } from './sftp/ssh-config-reader'
 import { findSftpBinary, getSftpVersion } from './sftp/binary-finder'
 import { loadConfig, setRememberedUser, getRememberedUser } from './config-store'
-import { listLocalDirectory, listDrives, deleteLocalEntry } from './local-fs'
+import { listLocalDirectory, listDrives, deleteLocalEntry, findLocalFiles, localExists } from './local-fs'
+import { join } from 'path'
 import { TransferManager } from './transfers/transfer-manager'
 import type { ConnectionConfig, TransferProgress } from './sftp/types'
 
@@ -118,8 +119,13 @@ export function registerIpcHandlers(): void {
   // --- Remote FS ---
 
   ipcMain.handle('remote-ls', async (_e, path: unknown) => {
-    if (!session?.isConnected) throw new Error('Not connected')
-    return session.listDirectory(validatePath(path, 'remote path'))
+    if (!session?.isConnected) return null
+    try {
+      return await session.listDirectory(validatePath(path, 'remote path'))
+    } catch {
+      // Transient errors during abort/reconnect — return null so polling ignores
+      return null
+    }
   })
 
   ipcMain.handle('remote-pwd', async () => {
@@ -165,6 +171,75 @@ export function registerIpcHandlers(): void {
     await deleteLocalEntry(validatePath(path, 'local path'))
   })
 
+  // --- Transfer Conflict Check ---
+
+  ipcMain.handle('check-transfer-conflicts', async (_e, direction: unknown, sourcePath: unknown, destDir: unknown, filename: unknown) => {
+    const dir = validateString(direction as string, 'direction')
+    const src = validatePath(sourcePath, 'source path')
+    const dest = validatePath(destDir, 'dest dir')
+    const name = validateString(filename as string, 'filename')
+
+    if (dir === 'download') {
+      // Downloading remote → local: check what exists locally at dest/filename
+      const destPath = join(dest, name)
+      if (!await localExists(destPath)) return []
+      // It exists — check if it's a directory (deep scan) or a file
+      const { stat } = await import('fs/promises')
+      const stats = await stat(destPath)
+      if (stats.isDirectory()) {
+        // Deep scan: find all files inside remote source that also exist locally
+        if (!session?.isConnected) return [name]
+        const remoteFiles = await session.listDirectoryRecursive(src, name)
+        const conflicts: string[] = []
+        for (const relPath of remoteFiles) {
+          const localTarget = join(dest, relPath.replace(/\//g, process.platform === 'win32' ? '\\' : '/'))
+          if (await localExists(localTarget)) {
+            conflicts.push(relPath)
+          }
+        }
+        return conflicts.length > 0 ? conflicts : [name + '/']
+      }
+      return [name]
+    } else {
+      // Uploading local → remote: check what exists remotely at dest/filename
+      if (!session?.isConnected) return []
+      const remoteDest = dest.endsWith('/') ? dest + name : dest + '/' + name
+      try {
+        const entries = await session.listDirectory(dest)
+        const existing = entries.find(e => e.name === name)
+        if (!existing) return []
+        if (existing.isDirectory) {
+          // Deep scan: find all files inside local source that also exist remotely
+          const localFiles = await findLocalFiles(src, name)
+          const conflicts: string[] = []
+          for (const relPath of localFiles) {
+            const remoteTarget = dest.endsWith('/')
+              ? dest + relPath.replace(/\\/g, '/')
+              : dest + '/' + relPath.replace(/\\/g, '/')
+            try {
+              // Check if file exists by listing parent and finding the name
+              const parts = relPath.replace(/\\/g, '/').split('/')
+              const fname = parts.pop()!
+              const parentPath = dest.endsWith('/')
+                ? dest + parts.join('/')
+                : dest + '/' + parts.join('/')
+              const parentEntries = await session.listDirectory(parentPath)
+              if (parentEntries.some(e => e.name === fname)) {
+                conflicts.push(relPath.replace(/\\/g, '/'))
+              }
+            } catch {
+              // Remote path doesn't exist — no conflict
+            }
+          }
+          return conflicts.length > 0 ? conflicts : [name + '/']
+        }
+        return [name]
+      } catch {
+        return []
+      }
+    }
+  })
+
   // --- Transfers ---
 
   ipcMain.handle('transfer-download', (_e, remotePath: unknown, localPath: unknown, filename: unknown) => {
@@ -185,8 +260,8 @@ export function registerIpcHandlers(): void {
     )
   })
 
-  ipcMain.handle('transfer-cancel', (_e, id: unknown) => {
-    transferManager?.cancel(validateString(id, 'transfer id'))
+  ipcMain.handle('transfer-cancel', async (_e, id: unknown) => {
+    await transferManager?.cancel(validateString(id, 'transfer id'))
   })
 
   ipcMain.handle('transfer-list', () => {

@@ -70,27 +70,32 @@ export function detectSftpPrompt(output: string): boolean {
 
 /**
  * Parse transfer progress from sftp output.
- * sftp uses \r to overwrite progress lines:
- *   filename.txt  45%   12MB   3.2MB/s   00:05
+ * sftp uses \r to overwrite progress lines. Typical formats:
+ *   filename.txt                     45%   12MB   3.2MB/s   00:05 ETA
+ *   filename.txt                    100%   12MB   3.2MB/s   00:16
+ * Lines may wrap with \n when wider than pty columns.
  */
 export function parseTransferProgress(line: string): Partial<TransferProgress> | null {
-  const match = line.match(
-    /^(.+?)\s+(\d+)%\s+(\S+)\s+(\S+\/s)\s+(\S+)\s*$/
+  // Collapse any embedded newlines and excess whitespace from pty line wrapping
+  const collapsed = line.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim()
+  const match = collapsed.match(
+    /^(.+?)\s+(\d+)%\s+(\S+)\s+(\S+\/s)\s+([\d:]+(?:\s+ETA)?)\s*$/
   )
   if (!match) return null
 
-  const [, filename, percentStr, transferred, speed, eta] = match
+  const [, filename, percentStr, , speed, eta] = match
 
   return {
     filename: filename.trim(),
     percent: parseInt(percentStr, 10),
     speed,
-    eta
+    eta: eta.replace(/\s+ETA$/, '')
   }
 }
 
 /**
  * Detect connection errors in sftp output.
+ * Used during the connection phase — includes auth failures like "Permission denied".
  */
 export function detectConnectionError(output: string): string | null {
   const errorPatterns = [
@@ -110,4 +115,13 @@ export function detectConnectionError(output: string): string | null {
   }
 
   return null
+}
+
+/**
+ * Detect disconnection after an established session.
+ * Does NOT include "Permission denied" — that's a normal command error,
+ * not a connection loss.
+ */
+export function detectDisconnection(output: string): boolean {
+  return /Connection closed|Connection reset/i.test(output)
 }

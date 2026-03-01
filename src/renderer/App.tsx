@@ -1,18 +1,38 @@
-import { useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { api } from './lib/api'
 import { ConnectionScreen } from './components/connection/ConnectionScreen'
 import { FileBrowser } from './components/browser/FileBrowser'
 import { ToastContainer } from './components/ui/ToastContainer'
+import { ConfirmDialog } from './components/ui/ConfirmDialog'
+import { OverwriteDialog } from './components/ui/OverwriteDialog'
 import { useSftp } from './hooks/use-sftp'
 import { useLocalFs } from './hooks/use-local-fs'
 import { useTransfers } from './hooks/use-transfers'
 import { useToasts } from './hooks/use-toasts'
+
+interface PendingDelete {
+  path: string
+  name: string
+  isDirectory: boolean
+  side: 'local' | 'remote'
+}
+
+interface PendingTransfer {
+  direction: 'upload' | 'download'
+  sourcePath: string
+  destDir: string
+  filename: string
+  conflicts: string[]
+}
 
 export default function App() {
   const sftp = useSftp()
   const local = useLocalFs()
   const xfer = useTransfers()
   const { toasts, addToast, dismissToast } = useToasts()
+
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
+  const [pendingTransfer, setPendingTransfer] = useState<PendingTransfer | null>(null)
 
   // Route errors to toasts
   useEffect(() => {
@@ -29,29 +49,75 @@ export default function App() {
     }
   }, [local.error])
 
-  const handleDeleteLocal = useCallback(async (path: string, name: string) => {
-    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return
-    try {
-      await api.localDelete(path)
-      local.refreshLocal()
-    } catch (err) {
-      addToast(String(err), 'error')
-    }
-  }, [local.refreshLocal, addToast])
+  // --- Delete handlers (styled modal instead of native confirm) ---
 
-  const handleDeleteRemote = useCallback(async (path: string, name: string, isDirectory: boolean) => {
-    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return
+  const handleDeleteLocal = useCallback((_path: string, name: string, isDirectory: boolean) => {
+    setPendingDelete({ path: _path, name, isDirectory, side: 'local' })
+  }, [])
+
+  const handleDeleteRemote = useCallback((path: string, name: string, isDirectory: boolean) => {
+    setPendingDelete({ path, name, isDirectory, side: 'remote' })
+  }, [])
+
+  const confirmDelete = useCallback(async () => {
+    if (!pendingDelete) return
+    const { path, name, isDirectory, side } = pendingDelete
+    setPendingDelete(null)
     try {
-      if (isDirectory) {
-        await api.remoteRmdir(path)
+      if (side === 'local') {
+        await api.localDelete(path)
+        local.refreshLocal()
       } else {
-        await api.remoteRm(path)
+        if (isDirectory) {
+          await api.remoteRmdir(path)
+        } else {
+          await api.remoteRm(path)
+        }
+        sftp.refreshRemote()
       }
-      sftp.refreshRemote()
     } catch (err) {
       addToast(String(err), 'error')
     }
-  }, [sftp.refreshRemote, addToast])
+  }, [pendingDelete, local.refreshLocal, sftp.refreshRemote, addToast])
+
+  // --- Transfer handlers (overwrite check) ---
+
+  const handleDownload = useCallback(async (remotePath: string, localPath: string, filename: string) => {
+    try {
+      const conflicts = await api.checkTransferConflicts('download', remotePath, localPath, filename)
+      if (conflicts.length > 0) {
+        setPendingTransfer({ direction: 'download', sourcePath: remotePath, destDir: localPath, filename, conflicts })
+      } else {
+        xfer.download(remotePath, localPath, filename)
+      }
+    } catch {
+      xfer.download(remotePath, localPath, filename)
+    }
+  }, [xfer.download])
+
+  const handleUpload = useCallback(async (localPath: string, remotePath: string, filename: string) => {
+    try {
+      const conflicts = await api.checkTransferConflicts('upload', localPath, remotePath, filename)
+      if (conflicts.length > 0) {
+        setPendingTransfer({ direction: 'upload', sourcePath: localPath, destDir: remotePath, filename, conflicts })
+      } else {
+        xfer.upload(localPath, remotePath, filename)
+      }
+    } catch {
+      xfer.upload(localPath, remotePath, filename)
+    }
+  }, [xfer.upload])
+
+  const confirmTransfer = useCallback(() => {
+    if (!pendingTransfer) return
+    const { direction, sourcePath, destDir, filename } = pendingTransfer
+    setPendingTransfer(null)
+    if (direction === 'download') {
+      xfer.download(sourcePath, destDir, filename)
+    } else {
+      xfer.upload(sourcePath, destDir, filename)
+    }
+  }, [pendingTransfer, xfer.download, xfer.upload])
 
   if (!sftp.connected && !sftp.disconnectedUnexpectedly) {
     return (
@@ -89,8 +155,8 @@ export default function App() {
         onDeleteLocal={handleDeleteLocal}
         onDeleteRemote={handleDeleteRemote}
         transfers={xfer.transfers}
-        onDownload={xfer.download}
-        onUpload={xfer.upload}
+        onDownload={handleDownload}
+        onUpload={handleUpload}
         onCancelTransfer={xfer.cancel}
         onClearCompleted={xfer.clearCompleted}
         activeTransferCount={xfer.activeCount}
@@ -100,6 +166,25 @@ export default function App() {
         onReconnect={sftp.reconnect}
         onDismissReconnect={sftp.dismissReconnect}
       />
+
+      {/* Delete Confirmation */}
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title="Delete"
+        message={pendingDelete ? `Delete "${pendingDelete.name}"? This cannot be undone.` : ''}
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
+
+      {/* Transfer Overwrite Confirmation */}
+      <OverwriteDialog
+        open={!!pendingTransfer}
+        filename={pendingTransfer?.filename ?? ''}
+        conflicts={pendingTransfer?.conflicts ?? []}
+        onConfirm={confirmTransfer}
+        onCancel={() => setPendingTransfer(null)}
+      />
+
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </>
   )

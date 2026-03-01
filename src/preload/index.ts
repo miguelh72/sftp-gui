@@ -16,7 +16,7 @@ const api = {
   disconnect: (): Promise<void> => ipcRenderer.invoke('disconnect'),
 
   // Remote FS
-  remoteLs: (path: string): Promise<RemoteFileEntry[]> => ipcRenderer.invoke('remote-ls', path),
+  remoteLs: (path: string): Promise<RemoteFileEntry[] | null> => ipcRenderer.invoke('remote-ls', path),
   remotePwd: (): Promise<string> => ipcRenderer.invoke('remote-pwd'),
   remoteMkdir: (path: string): Promise<void> => ipcRenderer.invoke('remote-mkdir', path),
   remoteRm: (path: string): Promise<void> => ipcRenderer.invoke('remote-rm', path),
@@ -31,6 +31,8 @@ const api = {
   localDelete: (path: string): Promise<void> => ipcRenderer.invoke('local-delete', path),
 
   // Transfers
+  checkTransferConflicts: (direction: 'upload' | 'download', sourcePath: string, destDir: string, filename: string): Promise<string[]> =>
+    ipcRenderer.invoke('check-transfer-conflicts', direction, sourcePath, destDir, filename),
   transferDownload: (remotePath: string, localPath: string, filename: string): Promise<string> =>
     ipcRenderer.invoke('transfer-download', remotePath, localPath, filename),
   transferUpload: (localPath: string, remotePath: string, filename: string): Promise<string> =>
