@@ -30,11 +30,11 @@ Lightweight Electron + React app that wraps the system's `sftp.exe` binary direc
 
 **Concurrent transfers:** Uses a session pool model — up to `maxConcurrentTransfers` (default 6, configurable 1–10 in settings) sftp sessions created lazily and reused across transfers. The main browsing session is never used for transfers. Folder transfers are decomposed into individual file-level work items distributed across pool sessions. Directory structure is created upfront (local via `fs.mkdir`, remote via a pool session) before distributing file work.
 
-**Transfer cancellation:** For the main browsing session: kills the PTY and reconnects transparently. Uses a generation counter on the PTY to prevent stale `onExit`/`onData` handlers from corrupting the new connection. Disposes the old data listener before killing to prevent `detectDisconnection` from firing on the dying process's output. A 500ms delay between kill and reconnect avoids server-side connection rejection. For transfer sessions: removes pending work items from the queue, kills active pool sessions working on that transfer (discards from pool), and cleans up partial/completed files.
+**Transfer cancellation:** For the main browsing session: kills the PTY and reconnects transparently. Uses a generation counter on the PTY to prevent stale `onExit`/`onData` handlers from corrupting the new connection. Disposes the old data listener before killing to prevent `detectDisconnection` from firing on the dying process's output. A 500ms delay between kill and reconnect avoids server-side connection rejection. For transfer sessions: removes pending work items from the queue, kills active pool sessions working on that transfer (discards from pool). Cleanup behavior is configurable via `cancelCleanup` setting: `remove-partial` (default) keeps completed files and only deletes in-flight partial files, `remove-all` deletes the entire destination. Single-file transfers always delete the partial file regardless of setting.
 
 **Folder transfer progress:** Pre-scans all files recursively to get total bytes before starting the transfer. Tracks cumulative `completedBytes` as each file completes, showing `completedBytes/totalBytes` percent.
 
-**Settings:** Stored in `%APPDATA%/sftp-gui/config.json` alongside remembered users and window state. Currently supports `maxConcurrentTransfers`. Settings panel accessible via gear icon in the toolbar.
+**Settings:** Stored in `%APPDATA%/sftp-gui/config.json` alongside remembered users and window state. Currently supports `maxConcurrentTransfers` and `cancelCleanup`. Settings panel accessible via gear icon in the toolbar.
 
 ## Project Structure
 
@@ -79,7 +79,7 @@ sftp-gui/
 │       │   │   ├── Modal.tsx            # Reusable modal backdrop with escape/click-outside
 │       │   │   ├── ConfirmDialog.tsx    # Styled delete confirmation dialog
 │       │   │   ├── OverwriteDialog.tsx  # Transfer overwrite warning with file list
-│       │   │   └── SettingsModal.tsx   # Settings panel (max concurrent transfers)
+│       │   │   └── SettingsModal.tsx   # Settings panel (max concurrent transfers, cancel cleanup)
 │       │   ├── connection/
 │       │   │   ├── ConnectionScreen.tsx
 │       │   │   ├── HostList.tsx
@@ -157,7 +157,7 @@ The following security measures are in place (from a formal audit):
 - Dual-pane file browser (local left, remote right) with draggable splitter
 - Drag-and-drop transfers between panes with progress bars, speed, ETA
 - Folder transfer progress tracking (total bytes across all nested files)
-- Transfer cancellation with partial file cleanup (kills PTY, reconnects transparently)
+- Transfer cancellation with configurable cleanup (keep completed files or remove all)
 - Concurrent transfers via session pool (configurable 1–10 parallel sftp sessions)
 - Overwrite conflict detection with deep file scanning and confirmation modal
 - Right-click context menu with delete for both local and remote panes

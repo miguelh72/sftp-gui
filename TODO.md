@@ -1,6 +1,5 @@
 # TODO
 
-- Add setting to handle what happens on cancelation with multiple files. Either remove files or leave those that fully transfered but remove those that didn't fully transfer (this should be default).
 - Add setting to enable skip when transfering and some files are found to override.
 - Allow moving multiple selected files at once
     - Allow Ctrl+Click multi-file select

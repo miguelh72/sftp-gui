@@ -93,6 +93,7 @@ export class TransferManager extends EventEmitter {
   private mainSession: SftpSession
   private connectionConfig: ConnectionConfig
   private maxConcurrent: number
+  private cancelCleanup: 'remove-partial' | 'remove-all'
 
   private sessionPool: SftpSession[] = []
   private activeSessions = new Map<string, ActiveWork>()
@@ -100,11 +101,16 @@ export class TransferManager extends EventEmitter {
   private transfers = new Map<string, TransferMeta>()
   private destroying = false
 
-  constructor(mainSession: SftpSession, connectionConfig: ConnectionConfig, maxConcurrent: number) {
+  constructor(mainSession: SftpSession, connectionConfig: ConnectionConfig, maxConcurrent: number, cancelCleanup: 'remove-partial' | 'remove-all' = 'remove-partial') {
     super()
     this.mainSession = mainSession
     this.connectionConfig = connectionConfig
     this.maxConcurrent = maxConcurrent
+    this.cancelCleanup = cancelCleanup
+  }
+
+  setCancelCleanup(mode: 'remove-partial' | 'remove-all'): void {
+    this.cancelCleanup = mode
   }
 
   async enqueueDownload(remotePath: string, localPath: string, filename: string): Promise<string> {
@@ -259,11 +265,13 @@ export class TransferManager extends EventEmitter {
     // Remove pending work items for this transfer
     this.fileQueue = this.fileQueue.filter(w => w.transferId !== id)
 
-    // Kill active sessions working on this transfer
+    // Collect in-flight work items before killing sessions
+    const inFlightWork: FileWork[] = []
     const sessionsToKill: string[] = []
     for (const [sessionId, active] of this.activeSessions) {
       if (active.work.transferId === id) {
         sessionsToKill.push(sessionId)
+        inFlightWork.push(active.work)
       }
     }
 
@@ -279,8 +287,14 @@ export class TransferManager extends EventEmitter {
       }
     }
 
-    // Clean up transferred files
-    await this.cleanupTransfer(meta.item)
+    // Clean up based on cancel cleanup mode
+    if (!meta.item.isFolder || this.cancelCleanup === 'remove-all') {
+      // Single-file transfers or remove-all mode: delete the entire destination
+      await this.cleanupTransfer(meta.item)
+    } else {
+      // Folder transfer with remove-partial: only delete in-flight files
+      await this.cleanupPartialFiles(inFlightWork)
+    }
 
     meta.item.status = 'cancelled'
     this.emit('cancelled', meta.item.toJSON())
@@ -453,6 +467,24 @@ export class TransferManager extends EventEmitter {
     }
 
     this.sessionPool.push(session)
+  }
+
+  private async cleanupPartialFiles(inFlightWork: FileWork[]): Promise<void> {
+    for (const work of inFlightWork) {
+      try {
+        if (work.direction === 'download') {
+          await deleteLocalEntry(join(work.destPath, work.filename))
+        } else {
+          if (!this.mainSession.isConnected) continue
+          const target = work.destPath.endsWith('/')
+            ? work.destPath + work.filename
+            : work.destPath + '/' + work.filename
+          await this.mainSession.rm(target)
+        }
+      } catch {
+        // Best-effort
+      }
+    }
   }
 
   private async cleanupTransfer(item: TransferItem): Promise<void> {

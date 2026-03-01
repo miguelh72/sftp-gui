@@ -10,17 +10,21 @@ interface Props {
 
 export function SettingsModal({ open, onClose }: Props) {
   const [maxConcurrent, setMaxConcurrent] = useState(6)
+  const [cancelCleanup, setCancelCleanup] = useState<'remove-partial' | 'remove-all'>('remove-partial')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (!open) return
-    api.getSettings().then(s => setMaxConcurrent(s.maxConcurrentTransfers))
+    api.getSettings().then(s => {
+      setMaxConcurrent(s.maxConcurrentTransfers)
+      setCancelCleanup(s.cancelCleanup)
+    })
   }, [open])
 
   const handleSave = async () => {
     setSaving(true)
     try {
-      await api.setSettings({ maxConcurrentTransfers: maxConcurrent })
+      await api.setSettings({ maxConcurrentTransfers: maxConcurrent, cancelCleanup })
       onClose()
     } finally {
       setSaving(false)
@@ -52,6 +56,23 @@ export function SettingsModal({ open, onClose }: Props) {
           />
           <p className="text-xs text-zinc-500">
             Number of simultaneous sftp sessions for file transfers (1–10)
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm text-muted-foreground">
+            On cancel
+          </label>
+          <select
+            value={cancelCleanup}
+            onChange={e => setCancelCleanup(e.target.value as 'remove-partial' | 'remove-all')}
+            className="w-full rounded-lg border border-border bg-zinc-800 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="remove-partial">Keep completed files</option>
+            <option value="remove-all">Remove all files</option>
+          </select>
+          <p className="text-xs text-zinc-500">
+            When cancelling a folder transfer, keep already-completed files or remove everything
           </p>
         </div>
 

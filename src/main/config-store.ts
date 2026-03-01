@@ -4,10 +4,12 @@ import { app } from 'electron'
 
 export interface AppSettings {
   maxConcurrentTransfers: number
+  cancelCleanup: 'remove-partial' | 'remove-all'
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
-  maxConcurrentTransfers: 6
+  maxConcurrentTransfers: 6,
+  cancelCleanup: 'remove-partial'
 }
 
 interface AppConfig {

@@ -96,7 +96,7 @@ export function registerIpcHandlers(): void {
     setRememberedUser(config.host, config.username)
 
     const settings = getSettings()
-    transferManager = new TransferManager(session, config, settings.maxConcurrentTransfers)
+    transferManager = new TransferManager(session, config, settings.maxConcurrentTransfers, settings.cancelCleanup)
 
     const progressEvents = ['queued', 'started', 'progress', 'completed', 'failed', 'cancelled'] as const
     for (const event of progressEvents) {
@@ -292,10 +292,15 @@ export function registerIpcHandlers(): void {
     if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > 10) {
       throw new Error('maxConcurrentTransfers must be an integer between 1 and 10')
     }
-    const settings = { maxConcurrentTransfers: maxConcurrent }
+    const cancelCleanup = s.cancelCleanup
+    if (cancelCleanup !== 'remove-partial' && cancelCleanup !== 'remove-all') {
+      throw new Error('cancelCleanup must be "remove-partial" or "remove-all"')
+    }
+    const settings = { maxConcurrentTransfers: maxConcurrent, cancelCleanup }
     setSettings(settings)
     if (transferManager) {
       transferManager.setMaxConcurrent(maxConcurrent)
+      transferManager.setCancelCleanup(cancelCleanup)
     }
     return settings
   })

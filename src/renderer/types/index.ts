@@ -54,4 +54,5 @@ export interface SftpInfo {
 
 export interface AppSettings {
   maxConcurrentTransfers: number
+  cancelCleanup: 'remove-partial' | 'remove-all'
 }
