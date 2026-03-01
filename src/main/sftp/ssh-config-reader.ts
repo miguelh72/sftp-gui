@@ -23,6 +23,7 @@ export function readSshConfig(): HostInfo[] {
 
       const hostname = findDirective(section, 'HostName') || name
       const port = parseInt(findDirective(section, 'Port') || '22', 10)
+      if (!Number.isInteger(port) || port < 1 || port > 65535) continue
       const user = findDirective(section, 'User') || undefined
       const identityFile = findDirective(section, 'IdentityFile') || undefined
 

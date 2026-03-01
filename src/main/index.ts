@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, screen } from 'electron'
+import { app, BrowserWindow, Menu, shell, screen } from 'electron'
 import { join } from 'path'
 import { registerIpcHandlers } from './ipc-handlers'
 import { getWindowState, setWindowState } from './config-store'
@@ -40,6 +40,8 @@ function createWindow(): void {
       nodeIntegration: false
     }
   })
+
+  Menu.setApplicationMenu(null)
 
   if (saved?.maximized) {
     mainWindow.maximize()

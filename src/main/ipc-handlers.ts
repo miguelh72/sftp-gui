@@ -203,7 +203,6 @@ export function registerIpcHandlers(): void {
     } else {
       // Uploading local → remote: check what exists remotely at dest/filename
       if (!session?.isConnected) return []
-      const remoteDest = dest.endsWith('/') ? dest + name : dest + '/' + name
       try {
         const entries = await session.listDirectory(dest)
         const existing = entries.find(e => e.name === name)

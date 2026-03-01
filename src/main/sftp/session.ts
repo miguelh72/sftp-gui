@@ -426,7 +426,12 @@ export class SftpSession extends EventEmitter {
     await new Promise(resolve => setTimeout(resolve, 500))
 
     // Reconnect transparently with the same config
-    await this.connect(this.lastConfig)
+    try {
+      await this.connect(this.lastConfig)
+    } catch {
+      // Reconnect failed — session stays disconnected, emit so UI shows reconnect banner
+      this.emit('disconnected', -1)
+    }
   }
 
   disconnect(): void {

@@ -26,7 +26,11 @@ Lightweight Electron + React app that wraps the system's `sftp.exe` binary direc
 
 **Binary discovery:** Checks known paths first (prefers `C:\Program Files\OpenSSH\sftp.exe` for post-quantum), then falls back to `where sftp.exe`.
 
-**Auto-refresh:** Both panes poll every 1 second via silent background fetches. Polling errors are swallowed to avoid toast spam.
+**Auto-refresh:** Both panes poll every 1 second via silent background fetches. Polling returns `null` during transient states (abort/reconnect) so the UI keeps showing previous entries instead of flashing empty.
+
+**Transfer cancellation:** Kills the PTY and reconnects transparently. Uses a generation counter on the PTY to prevent stale `onExit`/`onData` handlers from corrupting the new connection. Disposes the old data listener before killing to prevent `detectDisconnection` from firing on the dying process's output. A 500ms delay between kill and reconnect avoids server-side connection rejection.
+
+**Folder transfer progress:** Pre-scans all files recursively to get total bytes before starting the transfer. Tracks cumulative `completedBytes` as each file completes, showing `completedBytes/totalBytes` percent.
 
 ## Project Structure
 
@@ -67,7 +71,10 @@ sftp-gui/
 │       ├── components/
 │       │   ├── ui/
 │       │   │   ├── ToastContainer.tsx    # Animated toast stack (bottom-right)
-│       │   │   └── ReconnectBanner.tsx   # Connection-lost banner with reconnect button
+│       │   │   ├── ReconnectBanner.tsx   # Connection-lost banner with reconnect button
+│       │   │   ├── Modal.tsx            # Reusable modal backdrop with escape/click-outside
+│       │   │   ├── ConfirmDialog.tsx    # Styled delete confirmation dialog
+│       │   │   └── OverwriteDialog.tsx  # Transfer overwrite warning with file list
 │       │   ├── connection/
 │       │   │   ├── ConnectionScreen.tsx
 │       │   │   ├── HostList.tsx
@@ -144,9 +151,16 @@ The following security measures are in place (from a formal audit):
 
 - Dual-pane file browser (local left, remote right) with draggable splitter
 - Drag-and-drop transfers between panes with progress bars, speed, ETA
+- Folder transfer progress tracking (total bytes across all nested files)
+- Transfer cancellation with partial file cleanup (kills PTY, reconnects transparently)
+- Transfer queue (multiple transfers queued, processed sequentially)
+- Overwrite conflict detection with deep file scanning and confirmation modal
+- Right-click context menu with delete for both local and remote panes
+- Recursive remote folder delete (sftp has no `rm -r`)
 - SSH config + known_hosts parsing with searchable host list
 - Host key verification dialog on first connect
 - Remembered usernames per host
+- Styled modal dialogs (delete confirmation, overwrite warning)
 - Animated toast notifications for errors
 - Auto-reconnect banner on unexpected disconnection
 - Window size/position remembered across sessions
