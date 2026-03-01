@@ -1,14 +1,15 @@
-import { Download, Upload, X, Check, AlertCircle } from 'lucide-react'
+import { Download, Upload, X, Check, AlertCircle, AlertTriangle } from 'lucide-react'
 import type { TransferProgress } from '../../types'
 
 interface Props {
   transfer: TransferProgress
   onCancel: () => void
+  onViewFailures?: () => void
 }
 
-export function TransferRow({ transfer, onCancel }: Props) {
+export function TransferRow({ transfer, onCancel, onViewFailures }: Props) {
   const isActive = transfer.status === 'active' || transfer.status === 'queued'
-  const isFolderTransfer = !!transfer.isFolder
+  const hasFailedFiles = transfer.failedFiles && transfer.failedFiles.length > 0
 
   return (
     <div className="flex items-center gap-3 px-3 py-2 text-sm hover:bg-accent/50 transition-colors">
@@ -43,8 +44,32 @@ export function TransferRow({ transfer, onCancel }: Props) {
       {!isActive && (
         <span className="text-xs text-muted-foreground shrink-0 text-right">
           {transfer.status === 'queued' && 'Queued'}
-          {transfer.status === 'completed' && <Check className="h-3.5 w-3.5 text-green-400 inline" />}
-          {transfer.status === 'failed' && <AlertCircle className="h-3.5 w-3.5 text-red-400 inline" />}
+          {transfer.status === 'completed' && hasFailedFiles && (
+            <button
+              onClick={onViewFailures}
+              className="inline-flex items-center gap-1 text-amber-400 hover:text-amber-300 transition-colors"
+              title={`${transfer.failedFiles!.length} file(s) failed — click for details`}
+            >
+              <AlertTriangle className="h-3.5 w-3.5 inline" />
+              <span className="text-xs">{transfer.failedFiles!.length} failed</span>
+            </button>
+          )}
+          {transfer.status === 'completed' && !hasFailedFiles && <Check className="h-3.5 w-3.5 text-green-400 inline" />}
+          {transfer.status === 'failed' && hasFailedFiles && (
+            <button
+              onClick={onViewFailures}
+              className="inline-flex items-center gap-1 text-red-400 hover:text-red-300 transition-colors"
+              title={`All ${transfer.failedFiles!.length} file(s) failed — click for details`}
+            >
+              <AlertCircle className="h-3.5 w-3.5 inline" />
+              <span className="text-xs">All failed</span>
+            </button>
+          )}
+          {transfer.status === 'failed' && !hasFailedFiles && (
+            <span title={transfer.error}>
+              <AlertCircle className="h-3.5 w-3.5 text-red-400 inline" />
+            </span>
+          )}
           {transfer.status === 'cancelled' && 'Cancelled'}
         </span>
       )}

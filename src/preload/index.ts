@@ -40,7 +40,12 @@ const api = {
   transferUpload: (localPath: string, remotePath: string, filename: string, skipFiles?: string[]): Promise<string> =>
     ipcRenderer.invoke('transfer-upload', localPath, remotePath, filename, skipFiles),
   transferCancel: (id: string): Promise<void> => ipcRenderer.invoke('transfer-cancel', id),
+  transferRetryFailed: (id: string): Promise<string | null> => ipcRenderer.invoke('transfer-retry-failed', id),
   transferList: (): Promise<TransferProgress[]> => ipcRenderer.invoke('transfer-list'),
+
+  // Error Log
+  saveErrorLog: (content: string): Promise<boolean> =>
+    ipcRenderer.invoke('save-error-log', content),
 
   // Settings
   getSettings: (): Promise<{ maxConcurrentTransfers: number; cancelCleanup: 'remove-partial' | 'remove-all' }> => ipcRenderer.invoke('get-settings'),

@@ -331,6 +331,44 @@ export class TransferManager extends EventEmitter {
     this.processNext()
   }
 
+  retryFailed(originalId: string): string | null {
+    const originalMeta = this.transfers.get(originalId)
+    if (!originalMeta || !originalMeta.item.failedFiles.length) return null
+
+    const failedFiles = originalMeta.item.failedFiles
+    const direction = originalMeta.item.direction
+    const id = uuidv4()
+    const item = new TransferItem({
+      id,
+      filename: `${originalMeta.item.filename} (retry)`,
+      direction,
+      localPath: originalMeta.item.localPath,
+      remotePath: originalMeta.item.remotePath
+    })
+
+    // Set up as a multi-file transfer with estimated sizes (unknown, use 0)
+    if (failedFiles.length > 1) {
+      item.setFileSizes(failedFiles.map(f => ({ name: f.name, size: 0 })), 0)
+    }
+
+    this.transfers.set(id, { item, totalFiles: failedFiles.length, completedFiles: 0 })
+    this.emit('queued', item.toJSON())
+
+    for (const f of failedFiles) {
+      this.fileQueue.push({
+        transferId: id,
+        sourcePath: f.sourcePath,
+        destPath: f.destPath,
+        direction,
+        size: 0,
+        filename: f.name
+      })
+    }
+
+    this.processNext()
+    return id
+  }
+
   getAll(): TransferProgress[] {
     const results: TransferProgress[] = []
     for (const meta of this.transfers.values()) {
@@ -412,6 +450,8 @@ export class TransferManager extends EventEmitter {
   }
 
   private async executeWork(sessionId: string, session: SftpSession, work: FileWork, meta: TransferMeta): Promise<void> {
+    let fileErrored = false
+
     // Set up progress listener for this session
     const progressHandler = (progress: Partial<TransferProgress>): void => {
       // Route progress to the parent TransferItem
@@ -442,22 +482,44 @@ export class TransferManager extends EventEmitter {
       // Check if this transfer was cancelled (work removed from active)
       if (!this.activeSessions.has(sessionId)) return
 
-      // If not cancelled, fail the entire transfer
       if (meta.item.status !== 'cancelled') {
-        meta.item.status = 'failed'
-        meta.item.error = String(err)
-        this.emit('failed', meta.item.toJSON())
-        // Remove remaining work for this transfer
-        this.fileQueue = this.fileQueue.filter(w => w.transferId !== work.transferId)
+        fileErrored = true
+        if (meta.totalFiles > 1) {
+          // Folder transfer: track per-file failure and continue with remaining files
+          meta.item.failedFiles.push({ name: work.filename, error: String(err), sourcePath: work.sourcePath, destPath: work.destPath })
+          meta.completedFiles++
+          meta.item.updateProgress({ percent: 100, filename: work.filename })
+
+          if (meta.completedFiles >= meta.totalFiles) {
+            if (meta.item.failedFiles.length >= meta.totalFiles) {
+              meta.item.status = 'failed'
+              meta.item.error = `All ${meta.totalFiles} files failed`
+              this.emit('failed', meta.item.toJSON())
+            } else {
+              meta.item.status = 'completed'
+              meta.item.percent = 100
+              this.emit('completed', meta.item.toJSON())
+            }
+          } else {
+            this.emit('progress', meta.item.toJSON())
+          }
+        } else {
+          // Single file: fail the transfer
+          meta.item.status = 'failed'
+          meta.item.error = String(err)
+          this.emit('failed', meta.item.toJSON())
+        }
       }
     } finally {
       session.removeListener('transfer-progress', progressHandler)
 
-      // Return session to pool if still tracked
       if (this.activeSessions.has(sessionId)) {
         this.activeSessions.delete(sessionId)
-        if (session.isConnected && !this.destroying) {
+        // Don't return errored sessions to pool — they may be broken
+        if (!fileErrored && session.isConnected && !this.destroying) {
           this.returnSession(session)
+        } else if (!this.destroying) {
+          try { session.disconnect() } catch { /* best-effort */ }
         }
         this.emitSessionInfo()
       }

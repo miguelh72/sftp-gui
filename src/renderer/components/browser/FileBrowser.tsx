@@ -50,6 +50,7 @@ interface Props {
   onUploadMulti: (items: Array<{ sourcePath: string; destDir: string; filename: string; isDirectory: boolean }>) => void
   onCancelTransfer: (id: string) => void
   onClearCompleted: () => void
+  onViewFailures: (id: string) => void
   activeTransferCount: number
   sessionInfo: { active: number; max: number }
   disconnectedUnexpectedly: boolean
@@ -66,7 +67,7 @@ export function FileBrowser({
   onNavigateRemote, onRefreshRemote,
   onDisconnect,
   onDeleteLocal, onDeleteRemote,
-  transfers, onDownload, onUpload, onDownloadMulti, onUploadMulti, onCancelTransfer, onClearCompleted, activeTransferCount, sessionInfo,
+  transfers, onDownload, onUpload, onDownloadMulti, onUploadMulti, onCancelTransfer, onClearCompleted, onViewFailures, activeTransferCount, sessionInfo,
   disconnectedUnexpectedly, lastHost, reconnecting, onReconnect, onDismissReconnect
 }: Props) {
   const [splitPercent, setSplitPercent] = useState(50)
@@ -289,6 +290,7 @@ export function FileBrowser({
           onCancel={onCancelTransfer}
           onClearCompleted={onClearCompleted}
           onClose={() => setShowTransfers(false)}
+          onViewFailures={onViewFailures}
           sessionInfo={sessionInfo}
         />
       )}

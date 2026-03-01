@@ -7,10 +7,11 @@ interface Props {
   onCancel: (id: string) => void
   onClearCompleted: () => void
   onClose: () => void
+  onViewFailures: (id: string) => void
   sessionInfo: { active: number; max: number }
 }
 
-export function TransferPanel({ transfers, onCancel, onClearCompleted, onClose, sessionInfo }: Props) {
+export function TransferPanel({ transfers, onCancel, onClearCompleted, onClose, onViewFailures, sessionInfo }: Props) {
   const activeCount = transfers.filter(t => t.status === 'active' || t.status === 'queued').length
 
   return (
@@ -29,7 +30,12 @@ export function TransferPanel({ transfers, onCancel, onClearCompleted, onClose, 
           </div>
         ) : (
           [...transfers].reverse().map(t => (
-            <TransferRow key={t.id} transfer={t} onCancel={() => onCancel(t.id)} />
+            <TransferRow
+              key={t.id}
+              transfer={t}
+              onCancel={() => onCancel(t.id)}
+              onViewFailures={() => onViewFailures(t.id)}
+            />
           ))
         )}
       </div>

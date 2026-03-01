@@ -1,14 +1,16 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { api } from './lib/api'
 import { ConnectionScreen } from './components/connection/ConnectionScreen'
 import { FileBrowser } from './components/browser/FileBrowser'
 import { ToastContainer } from './components/ui/ToastContainer'
 import { ConfirmDialog } from './components/ui/ConfirmDialog'
 import { OverwriteDialog } from './components/ui/OverwriteDialog'
+import { FailedFilesModal } from './components/transfers/FailedFilesModal'
 import { useSftp } from './hooks/use-sftp'
 import { useLocalFs } from './hooks/use-local-fs'
 import { useTransfers } from './hooks/use-transfers'
 import { useToasts } from './hooks/use-toasts'
+import type { TransferProgress } from './types'
 
 interface DeleteItem {
   path: string
@@ -61,6 +63,43 @@ export default function App() {
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
   const [pendingTransfer, setPendingTransfer] = useState<PendingTransfer | null>(null)
   const [pendingMultiTransfer, setPendingMultiTransfer] = useState<PendingMultiTransfer | null>(null)
+  const [failureModalTransfer, setFailureModalTransfer] = useState<TransferProgress | null>(null)
+
+  // Track which transfer IDs we've already shown failure toasts for
+  const shownFailureToasts = useRef<Set<string>>(new Set())
+
+  // Show toasts for transfer failures
+  useEffect(() => {
+    for (const t of xfer.transfers) {
+      if (shownFailureToasts.current.has(t.id)) continue
+
+      if (t.status === 'completed' && t.failedFiles && t.failedFiles.length > 0) {
+        // Folder transfer with some files failed
+        shownFailureToasts.current.add(t.id)
+        addToast(`${t.failedFiles.length} file(s) failed in "${t.filename}" — click the transfer for details`, 'error', true)
+      } else if (t.status === 'failed' && t.isFolder && t.failedFiles && t.failedFiles.length > 0) {
+        // Folder transfer where ALL files failed
+        shownFailureToasts.current.add(t.id)
+        addToast(`All files failed in "${t.filename}" — click the transfer for details`, 'error', true)
+      } else if (t.status === 'failed' && !t.isFolder && t.error) {
+        // Single file transfer failed
+        shownFailureToasts.current.add(t.id)
+        addToast(`Transfer failed: ${t.error}`, 'error')
+      }
+    }
+  }, [xfer.transfers, addToast])
+
+  const handleViewFailures = useCallback((id: string) => {
+    const transfer = xfer.transfers.find(t => t.id === id)
+    if (transfer?.failedFiles && transfer.failedFiles.length > 0) {
+      setFailureModalTransfer(transfer)
+    }
+  }, [xfer.transfers])
+
+  const handleRetryFailed = useCallback((transfer: TransferProgress) => {
+    if (!transfer.failedFiles || transfer.failedFiles.length === 0) return
+    api.transferRetryFailed(transfer.id)
+  }, [])
 
   // Route errors to toasts
   useEffect(() => {
@@ -355,6 +394,7 @@ export default function App() {
         onUploadMulti={handleUploadMulti}
         onCancelTransfer={xfer.cancel}
         onClearCompleted={xfer.clearCompleted}
+        onViewFailures={handleViewFailures}
         activeTransferCount={xfer.activeCount}
         sessionInfo={xfer.sessionInfo}
         disconnectedUnexpectedly={sftp.disconnectedUnexpectedly}
@@ -396,6 +436,13 @@ export default function App() {
         onConfirm={confirmMultiTransfer}
         onSkip={skipMultiTransfer}
         onCancel={() => setPendingMultiTransfer(null)}
+      />
+
+      <FailedFilesModal
+        open={!!failureModalTransfer}
+        transfer={failureModalTransfer}
+        onRetry={handleRetryFailed}
+        onClose={() => setFailureModalTransfer(null)}
       />
 
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />

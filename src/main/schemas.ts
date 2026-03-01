@@ -49,3 +49,7 @@ export const conflictBatchInputSchema = z.array(conflictBatchItemSchema)
 // --- Skip files ---
 
 export const skipFilesSchema = z.array(z.string()).optional().nullable().transform(v => v ?? undefined)
+
+// --- Error log ---
+
+export const errorLogContentSchema = z.string().min(1).max(1_000_000)

@@ -1,4 +1,4 @@
-import type { TransferProgress } from '../sftp/types'
+import type { TransferProgress, FailedFile } from '../sftp/types'
 
 export class TransferItem implements TransferProgress {
   id: string
@@ -15,6 +15,7 @@ export class TransferItem implements TransferProgress {
   localPath: string
   remotePath: string
   isFolder = false
+  failedFiles: FailedFile[] = []
   /** Map of filename → size for folder transfers (files may share names across subdirs) */
   private fileSizes: Array<{ name: string; size: number }> = []
   private completedBytes = 0
@@ -150,7 +151,8 @@ export class TransferItem implements TransferProgress {
       status: this.status,
       error: this.error,
       isFolder: this.isFolder || undefined,
-      sourcePath: this.direction === 'upload' ? this.localPath : this.remotePath
+      sourcePath: this.direction === 'upload' ? this.localPath : this.remotePath,
+      failedFiles: this.failedFiles.length > 0 ? [...this.failedFiles] : undefined
     }
   }
 }

@@ -5,7 +5,10 @@
       "Bash(pnpm build:*)",
       "Bash(gh release:*)",
       "Bash(pnpm typecheck:*)",
-      "Bash(pnpm add:*)"
+      "Bash(pnpm add:*)",
+      "Bash(npx tsc:*)",
+      "Bash(node:*)",
+      "Bash(npm run:*)"
     ]
   }
 }

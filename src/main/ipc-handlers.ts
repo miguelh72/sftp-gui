@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain, BrowserWindow, dialog } from 'electron'
 import { homedir } from 'os'
 import { SftpSession } from './sftp/session'
 import { getAllHosts } from './sftp/ssh-config-reader'
@@ -14,7 +14,8 @@ import {
   appSettingsSchema,
   directionSchema,
   conflictBatchInputSchema,
-  skipFilesSchema
+  skipFilesSchema,
+  errorLogContentSchema
 } from './schemas'
 import type { TransferProgress } from './sftp/types'
 
@@ -293,6 +294,11 @@ export function registerIpcHandlers(): void {
     await transferManager?.cancel(parseOrThrow(safePathSchema,id))
   })
 
+  ipcMain.handle('transfer-retry-failed', (_e, id: unknown) => {
+    if (!transferManager) throw new Error('Not connected')
+    return transferManager.retryFailed(parseOrThrow(safePathSchema, id))
+  })
+
   ipcMain.handle('transfer-list', () => {
     return transferManager?.getAll() ?? []
   })
@@ -311,5 +317,21 @@ export function registerIpcHandlers(): void {
       transferManager.setCancelCleanup(settings.cancelCleanup)
     }
     return settings
+  })
+
+  // --- Error Log ---
+
+  ipcMain.handle('save-error-log', async (_e, rawContent: unknown) => {
+    const content = parseOrThrow(errorLogContentSchema, rawContent)
+    const win = getWindow()
+    if (!win) return false
+    const { filePath, canceled } = await dialog.showSaveDialog(win, {
+      defaultPath: 'transfer-errors.txt',
+      filters: [{ name: 'Text Files', extensions: ['txt'] }]
+    })
+    if (canceled || !filePath) return false
+    const { writeFile } = await import('fs/promises')
+    await writeFile(filePath, content, 'utf-8')
+    return true
   })
 }

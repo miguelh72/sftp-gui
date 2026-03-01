@@ -33,6 +33,8 @@ Lightweight Electron + React app that wraps the system's `sftp.exe` binary direc
 
 **Transfer cancellation:** For the main browsing session: kills the PTY and reconnects transparently. Uses a generation counter on the PTY to prevent stale `onExit`/`onData` handlers from corrupting the new connection. Disposes the old data listener before killing to prevent `detectDisconnection` from firing on the dying process's output. A 500ms delay between kill and reconnect avoids server-side connection rejection. For transfer sessions: removes pending work items from the queue, kills active pool sessions working on that transfer (discards from pool). Cleanup behavior is configurable via `cancelCleanup` setting: `remove-partial` (default) keeps completed files and only deletes in-flight partial files, `remove-all` deletes the entire destination. Single-file transfers always delete the partial file regardless of setting.
 
+**Transfer failure tracking:** When a single file fails during a folder transfer, remaining files continue transferring. Failed files are tracked per-file with `{ name, error, sourcePath, destPath }` in `TransferItem.failedFiles`. When all files are attempted: all succeeded → `completed`, some failed → `completed` with `failedFiles` populated (amber warning icon), all failed → `failed`. Session creation failures still cascade (fail the whole transfer). Failed sessions are discarded from the pool. A persistent toast shows the failure count, and clicking the warning icon opens a `FailedFilesModal` with per-file errors, retry, and save-log options. Retry re-enqueues each failed file individually using its stored source/dest paths. Save log uses a `save-error-log` IPC handler that opens a native save dialog.
+
 **Folder transfer progress:** Pre-scans all files recursively to get total bytes before starting the transfer. Tracks cumulative `completedBytes` as each file completes, showing `completedBytes/totalBytes` percent.
 
 **Multi-file selection:** Ctrl+Click toggles files in a per-pane `Set<string>`. Ctrl+Drag draws a rubber-band box that selects all intersecting files (additive to existing Ctrl+Click selections). Ctrl+Drag always means rubber-band selection, never file transfer — `onDragStart` suppresses native drag when Ctrl is held. Selection clears on directory navigation, plain click, or double-click. Dragging a selected file includes all selected files. Dragging an unselected file clears selection and drags only that file. Each selected file becomes an independent transfer. Batch conflict checking via `check-transfer-conflicts-batch` IPC. Duplicate transfers (same sourcePath + direction already active/queued) are filtered with a toast.
@@ -105,7 +107,8 @@ sftp-gui/
 │       │   └── transfers/
 │       │       ├── TransferPanel.tsx
 │       │       ├── TransferRow.tsx
-│       │       └── TransferControls.tsx
+│       │       ├── TransferControls.tsx
+│       │       └── FailedFilesModal.tsx
 │       ├── lib/
 │       │   ├── api.ts            # Typed wrapper around window.electronAPI
 │       │   ├── format.ts         # File size, date formatting
@@ -186,6 +189,7 @@ gh release create vX.Y.Z --title "vX.Y.Z (<Platform>)" --notes "Release notes he
 - Transfer cancellation with configurable cleanup (keep completed files or remove all)
 - Concurrent transfers via session pool (configurable 1–10 parallel sftp sessions)
 - Overwrite conflict detection with deep file scanning and confirmation modal (overwrite, skip existing, or cancel)
+- Transfer failure tracking: per-file errors, persistent toast, details modal with retry and save log
 - Transfer panel shows full source path (local path for uploads, remote path for downloads)
 - Right-click context menu with delete for both local and remote panes
 - Recursive remote folder delete (sftp has no `rm -r`)

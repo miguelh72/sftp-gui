@@ -19,6 +19,13 @@ export interface HostInfo {
   source: 'ssh-config' | 'known-hosts' | 'remembered'
 }
 
+export interface FailedFile {
+  name: string
+  error: string
+  sourcePath: string
+  destPath: string
+}
+
 export interface TransferProgress {
   id: string
   filename: string
@@ -33,6 +40,7 @@ export interface TransferProgress {
   error?: string
   isFolder?: boolean
   sourcePath?: string
+  failedFiles?: FailedFile[]
 }
 
 export interface SftpCommand {

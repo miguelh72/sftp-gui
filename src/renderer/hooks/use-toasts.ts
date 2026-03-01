@@ -19,15 +19,17 @@ export function useToasts() {
     }
   }, [])
 
-  const addToast = useCallback((message: string, type: Toast['type'] = 'error') => {
+  const addToast = useCallback((message: string, type: Toast['type'] = 'error', persistent = false) => {
     const id = String(++nextId)
     setToasts(prev => [...prev, { id, message, type }])
 
-    const timer = setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id))
-      timersRef.current.delete(id)
-    }, 5000)
-    timersRef.current.set(id, timer)
+    if (!persistent) {
+      const timer = setTimeout(() => {
+        setToasts(prev => prev.filter(t => t.id !== id))
+        timersRef.current.delete(id)
+      }, 5000)
+      timersRef.current.set(id, timer)
+    }
 
     return id
   }, [])

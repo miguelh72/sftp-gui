@@ -31,6 +31,13 @@ export interface ConnectionConfig {
   username: string
 }
 
+export interface FailedFile {
+  name: string
+  error: string
+  sourcePath: string
+  destPath: string
+}
+
 export interface TransferProgress {
   id: string
   filename: string
@@ -45,6 +52,7 @@ export interface TransferProgress {
   error?: string
   isFolder?: boolean
   sourcePath?: string
+  failedFiles?: FailedFile[]
 }
 
 export interface SftpInfo {
